@@ -39,6 +39,7 @@ namespace RBX_Alt_Manager.Forms
             this.AutoRejoinCheckbox = new System.Windows.Forms.CheckBox();
             this.AutoRejoinJobIdLabel = new System.Windows.Forms.Label();
             this.AutoRejoinJobIdTextBox = new RBX_Alt_Manager.Classes.BorderedTextBox();
+            this.AutoAdoptRejoinJobIdCB = new System.Windows.Forms.CheckBox();
             this.ACTabs = new RBX_Alt_Manager.Classes.NBTabControl();
             this.HeaderPanel = new System.Windows.Forms.Panel();
             this.TabButtonsPanel = new System.Windows.Forms.FlowLayoutPanel();
@@ -151,6 +152,7 @@ namespace RBX_Alt_Manager.Forms
             this.ControlsPanel.Controls.Add(this.AutoRejoinCheckbox);
             this.ControlsPanel.Controls.Add(this.AutoRejoinJobIdLabel);
             this.ControlsPanel.Controls.Add(this.AutoRejoinJobIdTextBox);
+            this.ControlsPanel.Controls.Add(this.AutoAdoptRejoinJobIdCB);
             this.ControlsPanel.Location = new System.Drawing.Point(0, 0);
             this.ControlsPanel.Name = "ControlsPanel";
             this.ControlsPanel.Padding = new System.Windows.Forms.Padding(5);
@@ -192,6 +194,19 @@ namespace RBX_Alt_Manager.Forms
             this.AutoRejoinJobIdTextBox.TabIndex = 22;
             this.Helper.SetToolTip(this.AutoRejoinJobIdTextBox, "Job ID for Auto Re-join. Selected accounts below will be teleported back to this Job ID if they leave or disconnect.");
             this.AutoRejoinJobIdTextBox.Leave += new System.EventHandler(this.AutoRejoinJobIdTextBox_Leave);
+            //
+            // AutoAdoptRejoinJobIdCB
+            //
+            this.AutoAdoptRejoinJobIdCB.AutoSize = true;
+            this.ControlsPanel.SetFlowBreak(this.AutoAdoptRejoinJobIdCB, true);
+            this.AutoAdoptRejoinJobIdCB.Location = new System.Drawing.Point(8, 157);
+            this.AutoAdoptRejoinJobIdCB.Name = "AutoAdoptRejoinJobIdCB";
+            this.AutoAdoptRejoinJobIdCB.Size = new System.Drawing.Size(268, 30);
+            this.AutoAdoptRejoinJobIdCB.TabIndex = 23;
+            this.AutoAdoptRejoinJobIdCB.Text = "Auto-join new accounts to the active\r\nAuto Re-join Job ID";
+            this.Helper.SetToolTip(this.AutoAdoptRejoinJobIdCB, "When a new account shows up (e.g. a Nexus connection) and some other account currently has Auto Re-join on, automatically set this new account to Auto Re-join the same Job ID. Does nothing if no account currently has Auto Re-join enabled.");
+            this.AutoAdoptRejoinJobIdCB.UseVisualStyleBackColor = true;
+            this.AutoAdoptRejoinJobIdCB.CheckedChanged += new System.EventHandler(this.AutoAdoptRejoinJobIdCB_CheckedChanged);
             //
             // TopStrip
             //
@@ -1248,6 +1263,7 @@ namespace RBX_Alt_Manager.Forms
         private System.Windows.Forms.CheckBox AutoRejoinCheckbox;
         private System.Windows.Forms.Label AutoRejoinJobIdLabel;
         private RBX_Alt_Manager.Classes.BorderedTextBox AutoRejoinJobIdTextBox;
+        private System.Windows.Forms.CheckBox AutoAdoptRejoinJobIdCB;
         private System.Windows.Forms.Panel CPanel;
         private System.Windows.Forms.Timer AutoRelaunchTimer;
         private System.Windows.Forms.TabPage HelpPage;

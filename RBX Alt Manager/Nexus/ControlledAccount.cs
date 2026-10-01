@@ -43,6 +43,13 @@ namespace RBX_Alt_Manager.Nexus
 
         public bool AutoRejoin;
         public string AutoRejoinJobId = "";
+
+        // Stamped whenever AutoRejoin is turned on for this account (see
+        // AutoRejoinCheckbox_CheckedChanged and SetAutoRejoin) - lets GetOrAddAccount's
+        // "adopt the newest Auto Re-join Job ID" feature pick whichever account turned Auto
+        // Re-join on most recently, when several accounts have it enabled with different Job IDs.
+        [JsonIgnore] public DateTime AutoRejoinEnabledAt;
+
         public bool IsChecked;
         public bool ClientCanReceive;
 

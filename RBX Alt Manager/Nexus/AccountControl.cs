@@ -198,6 +198,28 @@ namespace RBX_Alt_Manager.Forms
 
                 ControlledAccount newAccount = new ControlledAccount(linkedAccount);
 
+                // Opt-in via AutoAdoptRejoinJobIdCB (Settings tab): if some other account
+                // currently has Auto Re-join on, have this brand-new account join the
+                // SAME Job ID and start Auto Re-join too, instead of sitting idle until the
+                // user configures it manually. Different accounts can each have Auto Re-join
+                // pointed at a different Job ID, so "whichever was turned on most recently"
+                // (AutoRejoinEnabledAt) is the tie-breaker when more than one is active.
+                // No-op (and no AutoRejoinEnabledAt stamp) if nothing currently has it on.
+                if (AccountManager.AccountControl.Get<bool>("AutoAdoptRejoinJobId"))
+                {
+                    ControlledAccount Newest = Accounts
+                        .Where(a => a.AutoRejoin && !string.IsNullOrEmpty(a.AutoRejoinJobId))
+                        .OrderByDescending(a => a.AutoRejoinEnabledAt)
+                        .FirstOrDefault();
+
+                    if (Newest != null)
+                    {
+                        newAccount.AutoRejoin = true;
+                        newAccount.AutoRejoinJobId = Newest.AutoRejoinJobId;
+                        newAccount.AutoRejoinEnabledAt = Newest.AutoRejoinEnabledAt;
+                    }
+                }
+
                 Accounts.Add(newAccount);
                 Utilities.InvokeIfRequired(Instance, () =>
                 {
@@ -205,6 +227,9 @@ namespace RBX_Alt_Manager.Forms
                     SaveAccounts();
                     UpdateStatusSummary();
                 });
+
+                if (newAccount.AutoRejoin)
+                    EnsureAutoRejoinTimerRunning();
 
                 return (newAccount, true);
             }
@@ -816,6 +841,7 @@ namespace RBX_Alt_Manager.Forms
             RelayEnabledCB.Checked = AccountManager.AccountControl.Get<bool>("RelayEnabled");
             RelaunchDelayNumber.Value = AccountManager.AccountControl.Get<decimal>("RelaunchDelay");
             LauncherDelayNumber.Value = AccountManager.AccountControl.Get<decimal>("LauncherDelayNumber");
+            AutoAdoptRejoinJobIdCB.Checked = AccountManager.AccountControl.Get<bool>("AutoAdoptRejoinJobId");
             AutoMinimizeCB.Checked = AccountManager.AccountControl.Get<bool>("AutoMinimizeEnabled");
             AutoCloseCB.Checked = AccountManager.AccountControl.Get<bool>("AutoCloseEnabled");
             InternetCheckCB.Checked = AccountManager.AccountControl.Get<bool>("InternetCheck");
@@ -921,7 +947,14 @@ namespace RBX_Alt_Manager.Forms
             if (AutoRejoinCheckbox.CheckState == CheckState.Indeterminate) return;
 
             foreach (ControlledAccount account in AccountsView.SelectedObjects)
+            {
                 account.AutoRejoin = AutoRejoinCheckbox.Checked;
+
+                // Stamped on enable only, so AutoAdoptRejoinJobIdCB can tell which account's
+                // Job ID is the most recently-turned-on one (see GetOrAddAccount).
+                if (AutoRejoinCheckbox.Checked)
+                    account.AutoRejoinEnabledAt = DateTime.UtcNow;
+            }
 
             SaveAccounts();
 
@@ -935,6 +968,18 @@ namespace RBX_Alt_Manager.Forms
                 account.AutoRejoinJobId = AutoRejoinJobIdTextBox.Text.Trim();
 
             SaveAccounts();
+        }
+
+        // Opt-in: when ON, a brand-new account that shows up via a Nexus connection (see
+        // GetOrAddAccount) automatically adopts whichever Job ID was most recently turned on
+        // for Auto Re-join (if any account currently has it enabled) and starts Auto Re-join
+        // itself. When OFF (default), new accounts are left alone exactly like before.
+        private void AutoAdoptRejoinJobIdCB_CheckedChanged(object sender, EventArgs e)
+        {
+            if (!SettingsLoaded) return;
+
+            AccountManager.AccountControl.Set("AutoAdoptRejoinJobId", AutoAdoptRejoinJobIdCB.Checked ? "true" : "false");
+            AccountManager.IniSettings.Save("RAMSettings.ini");
         }
 
         // Shared by the checkbox handler above and the Web Control /control/api/autorejoin
@@ -1012,7 +1057,10 @@ namespace RBX_Alt_Manager.Forms
                 Acc.AutoRejoin = Enabled;
 
                 if (Enabled)
+                {
                     Acc.AutoRejoinJobId = JobId;
+                    Acc.AutoRejoinEnabledAt = DateTime.UtcNow;
+                }
             }
 
             SaveAccounts();
