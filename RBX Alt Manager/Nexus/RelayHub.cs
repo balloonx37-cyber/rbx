@@ -336,7 +336,11 @@ namespace RBX_Alt_Manager.Nexus
                 Task.Delay(5000).ContinueWith(_ => { if (ShouldReconnect) OpenSocket(); });
             };
 
-            try { Socket.Connect(); }
+            // ConnectAsync (not Connect) - Connect() blocks the calling thread until the TCP+TLS
+            // handshake finishes or times out, and RelayEnabledCB_CheckedChanged calls this
+            // directly on the UI thread, which froze the whole window ("Not Responding") whenever
+            // the relay host was slow to answer (e.g. a cold ngrok tunnel or a flaky network).
+            try { Socket.ConnectAsync(); }
             catch (Exception ex) { Program.Logger.Warn($"[Relay] Failed to connect: {ex.Message}"); }
         }
 
