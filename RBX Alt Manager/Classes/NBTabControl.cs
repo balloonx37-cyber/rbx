@@ -19,7 +19,16 @@ namespace RBX_Alt_Manager.Classes
         {
             InitializeComponent();
 
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.DoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+            // UserPaint used to be set here (alongside DoubleBuffer/ResizeRedraw) so OnPaint
+            // could redraw the selected tab's content-area border below. Verified via a
+            // minimal repro that this was the actual bug: UserPaint suppresses WM_DRAWITEM
+            // entirely on a .NET TabControl, so OnDrawItem (which paints the tab captions)
+            // never fired - the header row rendered as a blank strip with no text, no matter
+            // what DrawMode was set to. DoubleBuffer/ResizeRedraw alone are enough for the
+            // OnPaint override below and don't block WM_DRAWITEM, so UserPaint is dropped.
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.DoubleBuffer | ControlStyles.ResizeRedraw, true);
+
+            DrawMode = TabDrawMode.OwnerDrawFixed;
         }
 
         /// <summary> 
@@ -115,59 +124,61 @@ namespace RBX_Alt_Manager.Classes
             Invalidate();
         }
 
+        // Only fills the selected tab's content area here - the header row (tab captions) is
+        // handled by OnDrawItem below, since UserPaint blocks the native WM_PAINT header
+        // drawing but WM_DRAWITEM (which OwnerDrawFixed triggers) still gets through and is
+        // the correct place to draw owner-drawn tab captions.
+        //
+        // This used to also draw a 1px bevel border around the content area via
+        // ControlPaint.Light/Dark(tp.BackColor, 0.7f) - meant to visually separate the tab
+        // body from the native tab header next to it. On a dark theme, Light(..., 0.7f)
+        // produces a distinctly light/gray line, which used to be masked by the native header
+        // sitting right next to it. Once the header was replaced by TabButtonsPanel's buttons
+        // (see AccountControl.cs), that border became a visible light line along the control's
+        // right/bottom edge with nothing next to it to explain its color - removed since
+        // HeaderPanel's own themed background already provides the surrounding fill.
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
 
             e.Graphics.Clear(BackColor);
-            Rectangle r = ClientRectangle;
 
             if (TabCount <= 0) return;
 
-            StringFormat sf = new StringFormat();
-            sf.Alignment = StringAlignment.Center;
-            sf.LineAlignment = StringAlignment.Center;
-            r = SelectedTab.Bounds;
-                // new Rectangle(SelectedTab.Bounds.X, SelectedTab.Bounds.Y, (int)(SelectedTab.Bounds.Width * Program.Scale), (int)(SelectedTab.Bounds.Height * Program.Scale));
-
+            Rectangle r = SelectedTab.Bounds;
             r.Inflate(3, 3);
 
             TabPage tp = TabPages[SelectedIndex];
-            SolidBrush PaintBrush = new SolidBrush(tp.BackColor);
+            using SolidBrush PaintBrush = new SolidBrush(tp.BackColor);
 
             e.Graphics.FillRectangle(PaintBrush, r);
-
-            Color br = PaintBrush.Color.GetBrightness() < 0.4 ? ControlPaint.Light(PaintBrush.Color, 0.7f) : ControlPaint.Dark(PaintBrush.Color, 0.7f);
-            ControlPaint.DrawBorder(e.Graphics, r,
-                br, 1, ButtonBorderStyle.Solid,
-                br, 1, ButtonBorderStyle.Solid,
-                br, 1, ButtonBorderStyle.Solid,
-                br, 1, ButtonBorderStyle.Solid);
-
-            for (int index = 0; index <= TabCount - 1; index++)
-                PaintTabButton(index, e, r, PaintBrush, sf);
-
-            PaintBrush.Dispose();
         }
 
-        private void PaintTabButton(int index, PaintEventArgs e, Rectangle r, SolidBrush PaintBrush, StringFormat sf)
+        protected override void OnDrawItem(DrawItemEventArgs e)
         {
-            TabPage tp = TabPages[index];
-            r = GetTabRect(index);
-            // r = new Rectangle((int)(r.X*Program.Scale), r.Y, (int)(r.Width * Program.Scale), (int)(r.Height * 1f));
-            bool isSelected = index == SelectedIndex;
-            ButtonBorderStyle bs = index == SelectedIndex ? ButtonBorderStyle.Solid : ButtonBorderStyle.Solid;
+            if (e.Index < 0 || e.Index >= TabCount) return;
 
-            PaintBrush.Color = tp.BackColor;
+            TabPage tp = TabPages[e.Index];
+            Rectangle r = GetTabRect(e.Index);
+            bool isSelected = e.Index == SelectedIndex;
+
+            using SolidBrush PaintBrush = new SolidBrush(tp.BackColor);
             e.Graphics.FillRectangle(PaintBrush, r);
 
             Color br = PaintBrush.Color.GetBrightness() < 0.4 ? ControlPaint.Light(PaintBrush.Color, isSelected ? 1f : 0.4f) : ControlPaint.Dark(PaintBrush.Color, isSelected ? 1f : 0.4f);
             ControlPaint.DrawBorder(e.Graphics, r,
-                br, 1, bs,
-                br, 1, bs,
-                br, 1, bs,
-                br, 1, isSelected ? ButtonBorderStyle.None : bs);
+                br, 1, ButtonBorderStyle.Solid,
+                br, 1, ButtonBorderStyle.Solid,
+                br, 1, ButtonBorderStyle.Solid,
+                br, 1, isSelected ? ButtonBorderStyle.None : ButtonBorderStyle.Solid);
+
             PaintBrush.Color = tp.ForeColor;
+
+            using StringFormat sf = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
 
             if (Alignment == TabAlignment.Left || Alignment == TabAlignment.Right)
             {

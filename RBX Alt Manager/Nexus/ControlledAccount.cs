@@ -48,6 +48,13 @@ namespace RBX_Alt_Manager.Nexus
 
         [JsonIgnore] public WebSocketContext Context;
 
+        // Bumped every time this account moves to a different server/connection, so a poll
+        // loop started for a previous server can tell it's been superseded and stop instead of
+        // continuing to poll a server this account already left.
+        [JsonIgnore] private int _pollGeneration;
+
+        private static readonly Random PollJitter = new Random();
+
         public ControlledAccount(Account account)
         {
             LinkedAccount = account;
@@ -70,7 +77,13 @@ namespace RBX_Alt_Manager.Nexus
             this.Context = Context;
 
             AccountControl.Instance.ContextList.Add(Context, this);
-            AccountControl.Instance.InvokeIfRequired(() =>
+            // BeginInvokeIfRequired, not InvokeIfRequired - see its own comment in Utilities.cs.
+            // Connect/Disconnect/UpdatePlaceId/RefreshServerInfo all run on WebSocket message
+            // threads, one per connected account - a bulk Web Control action (teleporting or
+            // enabling Auto Re-join for many accounts at once) makes many of those threads call
+            // back into these UI touch-ups within the same short window, and a blocking Invoke
+            // from each of them in a row is what made the main window freeze.
+            AccountControl.Instance.BeginInvokeIfRequired(() =>
             {
                 AccountControl.Instance.AccountsView.RefreshObject(this);
                 AccountControl.Instance.UpdateStatusSummary();
@@ -86,7 +99,8 @@ namespace RBX_Alt_Manager.Nexus
             PlaceId = NewPlaceId;
             PlaceName = "";
 
-            AccountControl.Instance.InvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
+            // BeginInvokeIfRequired - see Connect's comment above.
+            AccountControl.Instance.BeginInvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
 
             Task.Run(async () =>
             {
@@ -98,7 +112,7 @@ namespace RBX_Alt_Manager.Nexus
 
                     PlaceName = Name;
 
-                    AccountControl.Instance.InvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
+                    AccountControl.Instance.BeginInvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
                 }
                 catch (Exception ex)
                 {
@@ -113,6 +127,9 @@ namespace RBX_Alt_Manager.Nexus
         // account is presently in. Called whenever either PlaceId or InGameJobId changes -
         // both are needed to identify a specific server, so this is a no-op until both are
         // known (e.g. JobId usually arrives via a separate SetJobId message after PlaceId).
+        // Also kicks off a self-rescheduling poll loop so the Players column keeps reflecting
+        // this server's population while the account just sits in it, not only at the moment
+        // it was joined.
         private void RefreshServerInfo()
         {
             long TargetPlaceId = PlaceId;
@@ -123,27 +140,71 @@ namespace RBX_Alt_Manager.Nexus
             PlayerCount = -1;
             MaxPlayers = -1;
 
-            Task.Run(async () =>
+            int Generation = ++_pollGeneration;
+
+            Task.Run(() => PollServerInfoLoop(TargetPlaceId, TargetJobId, Generation));
+        }
+
+        // Runs one lookup, applies the result, then reschedules itself after a randomized delay
+        // - as long as this account hasn't moved to a different server/generation in the
+        // meantime. The random spread (rather than a fixed interval) keeps multiple watched
+        // accounts from all polling in lockstep and stacking their requests together, which is
+        // what actually trips Roblox's rate limit on this endpoint (GetServerInfo's own cache
+        // and request gate handle the rest).
+        private async Task PollServerInfoLoop(long TargetPlaceId, string TargetJobId, int Generation)
+        {
+            try
             {
-                try
+                // A server that was just joined (teleport/rejoin) can take a few seconds to show
+                // up in Roblox's own public server listing - GetServerInfo walks that listing
+                // looking for this exact JobId, so an immediate lookup right after joining can
+                // legitimately come back "not found" even though the server is live. A few
+                // spaced-out retries absorb that indexing delay instead of leaving the Players
+                // column permanently blank for a normal public server.
+                (int Playing, int Max) = (-1, -1);
+
+                for (int Attempt = 0; Attempt < 4; Attempt++)
                 {
-                    (int Playing, int Max) = await Batch.GetServerInfo(TargetPlaceId, TargetJobId);
+                    if (_pollGeneration != Generation) return;
 
-                    // Bail if the account has already moved on to a different place/server
-                    // by the time this request comes back - don't stamp stale numbers onto
-                    // whatever it's actually in now.
-                    if (PlaceId != TargetPlaceId || InGameJobId != TargetJobId) return;
+                    (Playing, Max) = await Batch.GetServerInfo(TargetPlaceId, TargetJobId);
 
-                    PlayerCount = Playing;
-                    MaxPlayers = Max;
+                    if (Playing >= 0 && Max >= 0) break;
 
-                    AccountControl.Instance.InvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
+                    await Task.Delay(5000);
                 }
-                catch (Exception ex)
-                {
-                    Logger.Warn($"Failed to resolve server info for PlaceId {TargetPlaceId} JobId {TargetJobId}: {ex.Message}");
-                }
-            });
+
+                // Bail if the account has already moved on to a different place/server by the
+                // time this request comes back - don't stamp stale numbers onto whatever it's
+                // actually in now, and don't reschedule a poll for a server it already left.
+                if (_pollGeneration != Generation) return;
+
+                PlayerCount = Playing;
+                MaxPlayers = Max;
+
+                // BeginInvokeIfRequired - see Connect's comment above. This poll loop runs
+                // concurrently for every connected account, so this matters even outside bulk
+                // Web Control actions.
+                AccountControl.Instance.BeginInvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Failed to resolve server info for PlaceId {TargetPlaceId} JobId {TargetJobId}: {ex.Message}");
+            }
+
+            // Reschedule the next poll for this same server, 60-90s out with per-account jitter.
+            // Still gated on the generation check so a teleport/disconnect that happens during
+            // the wait cancels this chain instead of it firing a stale lookup later.
+            int DelayMs;
+
+            lock (PollJitter)
+                DelayMs = PollJitter.Next(60_000, 90_000);
+
+            await Task.Delay(DelayMs);
+
+            if (_pollGeneration != Generation) return;
+
+            await PollServerInfoLoop(TargetPlaceId, TargetJobId, Generation);
         }
 
         public void Disconnect()
@@ -155,9 +216,14 @@ namespace RBX_Alt_Manager.Nexus
             PlayerCount = -1;
             MaxPlayers = -1;
 
+            // Invalidate any pending poll loop from PollServerInfoLoop so it stops rescheduling
+            // itself for a server this account isn't even connected to anymore.
+            _pollGeneration++;
+
             if (Context != null) AccountControl.Instance.ContextList.Remove(Context);
 
-            AccountControl.Instance.InvokeIfRequired(() =>
+            // BeginInvokeIfRequired - see Connect's comment above.
+            AccountControl.Instance.BeginInvokeIfRequired(() =>
             {
                 AccountControl.Instance.AccountsView.RefreshObject(this);
                 AccountControl.Instance.UpdateStatusSummary();
@@ -190,7 +256,14 @@ namespace RBX_Alt_Manager.Nexus
                 else if (command.Name == "SetPlaceId" && !string.IsNullOrEmpty(command.Payload["Content"]) && long.TryParse(command.Payload["Content"], out long lPlaceId))
                     UpdatePlaceId(lPlaceId);
                 else if (command.Name == "SetJobId" && !string.IsNullOrEmpty(command.Payload["Content"]))
+                {
+                    // InGameJobId (not the plain JobId field) is what the grid's Job ID column
+                    // displays and what RefreshServerInfo keys off of - without this, a
+                    // teleport/rejoin never refreshes the player count or Job ID shown, since
+                    // InGameJobId otherwise only gets set once, at initial websocket connect.
                     JobId = command.Payload["Content"];
+                    InGameJobId = command.Payload["Content"];
+                }
                 else if (command.Name == "Echo" && !string.IsNullOrEmpty(command.Payload["Content"]))
                     AccountControl.Instance.EmitMessage(command.Payload["Content"], true);
                 else if (Enum.TryParse(command.Name, out CommandCreateElement elementType))

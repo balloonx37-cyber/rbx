@@ -6,7 +6,10 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
+// System.Management (Win32_Process) is used to enumerate/kill CefSharp subprocesses by
+// parent PID - see KillProcessTree below.
 using System.Windows.Forms;
 using File = System.IO.File;
 
@@ -101,17 +104,121 @@ namespace Auto_Update
 #endif
         }
 
+        // "Access is denied" on log4net.dll (and similar) is NOT just a slow-shutdown race -
+        // Auto Update.exe is a byte-for-byte copy of the main exe, and Program.Logger being a
+        // static field on the same class as Main forces the CLR to load log4net.dll into
+        // Auto Update.exe's OWN process the instant it starts, before the update even runs.
+        // That means the updater has log4net.dll open on itself - no amount of waiting or
+        // retrying a Delete/Move ever unblocks that, because the lock holder is the process
+        // doing the deleting. Windows still allows renaming a loaded/locked module though
+        // (this is the same trick most self-updaters use), so replacing "delete old, move new
+        // in" with "rename old out of the way, move new in" sidesteps the self-lock entirely.
+        // The renamed-away leftovers (*.rbxupdold) are harmless and get swept up by
+        // CleanupStaleRenamedFiles() next time the MAIN app starts (it never held them).
+        private const string StaleSuffix = ".rbxupdold";
+
+        private static void RetryIO(Action action, int attempts = 20, int delayMs = 300)
+        {
+            for (int i = 0; i < attempts; i++)
+            {
+                try
+                {
+                    action();
+                    return;
+                }
+                catch (IOException) when (i < attempts - 1) { Thread.Sleep(delayMs); }
+                catch (UnauthorizedAccessException) when (i < attempts - 1) { Thread.Sleep(delayMs); }
+            }
+        }
+
+        // Sweeps up ".rbxupdold*" leftovers from a previous update's rename-away step. Safe
+        // to call from the main app on every startup - by the time the main app is running
+        // again, nothing has these renamed-away files open any more (the old process that
+        // used to hold them is long gone), so a plain delete always succeeds here.
+        public static void CleanupStaleRenamedFiles(string directory)
+        {
+            try
+            {
+                foreach (string f in Directory.GetFiles(directory, "*" + StaleSuffix + "*"))
+                {
+                    try { File.Delete(f); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        // Kill() only asks the process to terminate - it does not wait for the process (and
+        // therefore its file handles, e.g. log4net.dll) to actually be released. Waiting
+        // here for a real exit closes that race instead of hoping the update loop below
+        // runs slowly enough for Windows to catch up on its own. Also kills every child
+        // process (CefSharp's out-of-process renderer/GPU/browser subprocesses) that spawns
+        // under the main exe - those inherit handles to files in this folder too (e.g.
+        // CefSharp.Core.dll, chrome_*.pak) and can keep them locked well after the parent
+        // process itself has already exited, which previously caused sporadic "Access is
+        // denied" failures unrelated to the main exe/log4net.dll timing at all.
+        private static void KillOtherInstancesAndWait()
+        {
+            try
+            {
+                int CurrentPid = Process.GetCurrentProcess().Id;
+
+                foreach (Process p in Process.GetProcessesByName("Roblox Account Manager"))
+                {
+                    if (p.Id == CurrentPid) continue;
+                    KillProcessTree(p.Id);
+                }
+
+                // CefSharp's subprocess exe runs under its own process name, not
+                // "Roblox Account Manager" - it must be matched and killed separately or it
+                // keeps its own handles (and its parent's DLLs) open indefinitely.
+                foreach (Process p in Process.GetProcessesByName("CefSharp.BrowserSubprocess"))
+                    KillProcessTree(p.Id);
+            }
+            catch { }
+        }
+
+        private static void KillProcessTree(int pid)
+        {
+            // Kill children first (best-effort, one level - CefSharp doesn't nest further)
+            // so they can't keep handles open after the parent is gone.
+            try
+            {
+                using (var searcher = new System.Management.ManagementObjectSearcher(
+                    $"SELECT ProcessId FROM Win32_Process WHERE ParentProcessId={pid}"))
+                {
+                    foreach (var obj in searcher.Get())
+                    {
+                        try
+                        {
+                            int childPid = Convert.ToInt32(obj["ProcessId"]);
+                            using (Process child = Process.GetProcessById(childPid))
+                            {
+                                child.Kill();
+                                child.WaitForExit(10000);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                using (Process p = Process.GetProcessById(pid))
+                {
+                    p.Kill();
+                    p.WaitForExit(15000);
+                }
+            }
+            catch { /* already gone */ }
+        }
+
         private void Extract()
         {
             bool ErorrOccured = false;
 
-            try
-            {
-                foreach (Process p in Process.GetProcessesByName("Roblox Account Manager"))
-                    if (p.Id != Process.GetCurrentProcess().Id)
-                        p.Kill();
-            }
-            catch { }
+            KillOtherInstancesAndWait();
 
             FileInfo Current = new FileInfo(Application.ExecutablePath);
 
@@ -123,6 +230,9 @@ namespace Auto_Update
                 archive.ExtractToDirectory(UpdatePath);
                 bool OldExecutableExists = File.Exists(Path.Combine(Environment.CurrentDirectory, "RBX Alt Manager.exe"));
 
+                // Old files at the destination are renamed out of the way (not deleted) since
+                // Auto Update.exe can have some of them (e.g. log4net.dll) open on itself -
+                // see the comment above StaleSuffix for why a plain Delete can never work here.
                 foreach (string s in Directory.GetFiles(UpdatePath))
                 {
                     string FN = Path.Combine(Environment.CurrentDirectory, Path.GetFileName(s));
@@ -131,8 +241,12 @@ namespace Auto_Update
                     if (FN == Application.ExecutablePath) FN = Path.Combine(Environment.CurrentDirectory, "Test.exe");
 #endif
 
-                    if (File.Exists(Path.Combine(Environment.CurrentDirectory, FN)))
-                        File.Delete(Path.Combine(Environment.CurrentDirectory, FN));
+                    string TargetFN = FN;
+                    if (File.Exists(Path.Combine(Environment.CurrentDirectory, TargetFN)))
+                    {
+                        string StalePath = TargetFN + StaleSuffix + Guid.NewGuid().ToString("N").Substring(0, 8);
+                        RetryIO(() => File.Move(Path.Combine(Environment.CurrentDirectory, TargetFN), StalePath));
+                    }
                 }
 
                 foreach (string s in Directory.GetDirectories(UpdatePath))
@@ -140,7 +254,11 @@ namespace Auto_Update
                     DirectoryInfo dir = new DirectoryInfo(Path.Combine(Environment.CurrentDirectory, Path.GetFileName(s)));
 
                     if (dir.Exists)
-                        dir.RecursiveDelete();
+                    {
+                        string StalePath = dir.FullName + StaleSuffix + Guid.NewGuid().ToString("N").Substring(0, 8);
+                        RetryIO(() => dir.MoveTo(StalePath));
+                        RetryIO(() => new DirectoryInfo(StalePath).RecursiveDelete());
+                    }
                 }
 
                 DirectoryInfo UpdateDir = new DirectoryInfo(UpdatePath);
@@ -148,20 +266,37 @@ namespace Auto_Update
                 foreach (FileInfo file in UpdateDir.GetFiles())
                     if (file.Name != Current.Name)
                         if (file.Name != "RBX Alt Manager.exe" || (file.Name == "RBX Alt Manager.exe" && OldExecutableExists)) // allows old shortcuts to keep working
-                            file.MoveTo(Path.Combine(Environment.CurrentDirectory, file.Name));
+                        {
+                            FileInfo CurrentFile = file;
+                            RetryIO(() => CurrentFile.MoveTo(Path.Combine(Environment.CurrentDirectory, CurrentFile.Name)));
+                        }
 
                 foreach (DirectoryInfo dir in UpdateDir.GetDirectories())
                 {
-                    dir.MoveTo(Path.Combine(Environment.CurrentDirectory, dir.Name));
+                    DirectoryInfo CurrentDir = dir;
+                    RetryIO(() => CurrentDir.MoveTo(Path.Combine(Environment.CurrentDirectory, CurrentDir.Name)));
 
                     foreach (FileInfo file in dir.GetFiles()) // remove old files from main directory
                     {
                         if (File.Exists(Path.Combine(Environment.CurrentDirectory, file.Name)))
-                            File.Delete(Path.Combine(Environment.CurrentDirectory, file.Name));
+                        {
+                            string StalePath = Path.Combine(Environment.CurrentDirectory, file.Name) + StaleSuffix + Guid.NewGuid().ToString("N").Substring(0, 8);
+                            RetryIO(() => File.Move(Path.Combine(Environment.CurrentDirectory, file.Name), StalePath));
+                        }
                     }
                 }
 
-                UpdateDir.RecursiveDelete();
+                RetryIO(() => UpdateDir.RecursiveDelete());
+
+                // Sweep up anything renamed away above. By now the only process that could
+                // have had them open was this same Auto Update.exe process, which is why they
+                // needed renaming instead of deleting in the first place - so a plain delete
+                // attempt costs nothing even if a couple are still transiently locked, they'll
+                // get caught by CleanupStaleRenamedFiles() on the main app's next startup.
+                foreach (string f in Directory.GetFiles(Environment.CurrentDirectory, "*" + StaleSuffix + "*"))
+                {
+                    try { File.Delete(f); } catch { }
+                }
             }
 #if !DEBUG
             catch (Exception x)

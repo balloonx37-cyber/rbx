@@ -4,6 +4,7 @@ using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
@@ -35,6 +36,25 @@ namespace RBX_Alt_Manager.Classes
 
         private static readonly Dictionary<long, long> PlaceUniversePair = new Dictionary<long, long>();
         public static readonly Dictionary<long, GameDetails> PlaceDetails = new Dictionary<long, GameDetails>();
+
+        // Roblox rate-limits the servers/Public endpoint hard, and it's shared across every
+        // account this app is watching - if 2+ accounts each walk their own 40-page server
+        // search concurrently, they trip each other's rate limit almost immediately and can
+        // end up retrying forever. This semaphore forces every GetServerInfo call (regardless
+        // of which account/PlaceId it's for) through one at a time with spacing between them,
+        // so the whole app makes one steady stream of requests instead of several competing
+        // bursts.
+        private static readonly SemaphoreSlim ServersRequestGate = new SemaphoreSlim(1, 1);
+
+        // Every server seen while walking a PlaceId's list gets cached here (not just the one
+        // JobId that was being looked for) - a full walk for one account's lookup ends up
+        // pre-answering every other account sitting in the same game for free, and even a
+        // second lookup for the same account/JobId a minute later can often be answered without
+        // any request at all. Keyed by (PlaceId, JobId); each entry expires after a short TTL
+        // so periodic polling doesn't just show ever-more-stale numbers.
+        private static readonly Dictionary<(long PlaceId, string JobId), (int Playing, int MaxPlayers, DateTime CachedAt)> ServerInfoCache = new Dictionary<(long, string), (int, int, DateTime)>();
+        private static readonly object ServerInfoCacheLock = new object();
+        private static readonly TimeSpan ServerInfoCacheTtl = TimeSpan.FromSeconds(45);
 
         /// <summary>
         /// Get an image for the specified Asset
@@ -117,41 +137,132 @@ namespace RBX_Alt_Manager.Classes
         {
             if (PlaceId <= 0 || string.IsNullOrEmpty(JobId)) return (-1, -1);
 
-            // The servers endpoint is keyed by PlaceId directly, not UniverseId, so no
-            // extra multiget-place-details round trip is needed here.
-            string Cursor = "";
+            var CacheKey = (PlaceId, JobId);
 
-            // Cap the number of pages walked so a huge/looping server list (or a server
-            // that's fallen off page 1 because a lot of servers were created since) can't
-            // spin this forever - 10 pages * 100 servers is generous for finding one match.
-            for (int Page = 0; Page < 10; Page++)
+            // Cache hit - either this exact JobId was looked up recently, or another account's
+            // walk of this same PlaceId happened to pass through it. Either way, skip the
+            // network entirely.
+            lock (ServerInfoCacheLock)
             {
-                var Request = new RestRequest($"v1/games/{PlaceId}/servers/Public?sortOrder=Asc&limit=100{(string.IsNullOrEmpty(Cursor) ? "" : $"&cursor={Uri.EscapeDataString(Cursor)}")}");
-
-                Request.AddCookie(".ROBLOSECURITY", AccountManager.LastValidAccount?.SecurityToken, "/", ".roblox.com");
-
-                RestResponse Response = await GamesAPI.ExecuteAsync(Request);
-
-                if (!Response.IsSuccessful)
-                {
-                    Program.Logger.Warn($"{Response.StatusCode} servers request failed for PlaceId {PlaceId}\nError: {Response.ErrorMessage}\nContent: {Response.Content}");
-                    return (-1, -1);
-                }
-
-                JObject Body = JObject.Parse(Response.Content);
-                JArray Servers = Body["data"]?.Value<JArray>();
-
-                if (Servers != null)
-                    foreach (JToken Server in Servers)
-                        if (string.Equals(Server["id"]?.Value<string>(), JobId, StringComparison.OrdinalIgnoreCase))
-                            return (Server["playing"]?.Value<int>() ?? -1, Server["maxPlayers"]?.Value<int>() ?? -1);
-
-                Cursor = Body["nextPageCursor"]?.Value<string>();
-
-                if (string.IsNullOrEmpty(Cursor)) break;
+                if (ServerInfoCache.TryGetValue(CacheKey, out var Cached) && DateTime.UtcNow - Cached.CachedAt < ServerInfoCacheTtl)
+                    return (Cached.Playing, Cached.MaxPlayers);
             }
 
-            return (-1, -1);
+            // Serialize against every other in-flight GetServerInfo call (see ServersRequestGate)
+            // so multiple watched accounts don't each independently hammer this endpoint and
+            // trip Roblox's rate limit off of each other.
+            await ServersRequestGate.WaitAsync();
+
+            try
+            {
+                // Re-check the cache after acquiring the gate - another account's lookup may
+                // have just finished a full walk (and populated this JobId) while this call was
+                // waiting its turn, in which case there's nothing left to do.
+                lock (ServerInfoCacheLock)
+                {
+                    if (ServerInfoCache.TryGetValue(CacheKey, out var Cached) && DateTime.UtcNow - Cached.CachedAt < ServerInfoCacheTtl)
+                        return (Cached.Playing, Cached.MaxPlayers);
+                }
+
+                // The servers endpoint is keyed by PlaceId directly, not UniverseId, so no
+                // extra multiget-place-details round trip is needed here.
+                string Cursor = "";
+                int RateLimitRetries = 0;
+                (int Playing, int MaxPlayers) Found = (-1, -1);
+
+                // Popular games can have thousands of concurrent servers (e.g. 500+ for a game
+                // with ~14000 concurrent players at 28/server) - a low page cap can miss a real
+                // match just because it's sorted further back, especially with sortOrder=Asc
+                // where many servers tie on low player counts. 40 pages * 100 = 4000 servers
+                // covers almost any game while still bounding the worst case.
+                for (int Page = 0; Page < 40; Page++)
+                {
+                    var Request = new RestRequest($"v1/games/{PlaceId}/servers/Public?sortOrder=Asc&limit=100{(string.IsNullOrEmpty(Cursor) ? "" : $"&cursor={Uri.EscapeDataString(Cursor)}")}");
+
+                    Request.AddCookie(".ROBLOSECURITY", AccountManager.LastValidAccount?.SecurityToken, "/", ".roblox.com");
+
+                    RestResponse Response = await GamesAPI.ExecuteAsync(Request);
+
+                    // 429s are common on this endpoint once a few pages have been walked in
+                    // quick succession - back off and retry a bounded number of times instead of
+                    // either giving up immediately or (the previous bug) retrying the same page
+                    // forever, which just added to the rate-limit pressure instead of easing it.
+                    if ((int)Response.StatusCode == 429)
+                    {
+                        RateLimitRetries++;
+
+                        if (RateLimitRetries > 5)
+                        {
+                            Program.Logger.Warn($"Gave up walking servers for PlaceId {PlaceId} after repeated rate limiting");
+                            return Found.Playing >= 0 ? Found : (-1, -1);
+                        }
+
+                        Program.Logger.Warn($"Rate limited walking servers for PlaceId {PlaceId}, backing off (page {Page}, attempt {RateLimitRetries})");
+                        await Task.Delay(1000 * RateLimitRetries);
+                        Page--;
+                        continue;
+                    }
+
+                    RateLimitRetries = 0;
+
+                    if (!Response.IsSuccessful)
+                    {
+                        Program.Logger.Warn($"{Response.StatusCode} servers request failed for PlaceId {PlaceId}\nError: {Response.ErrorMessage}\nContent: {Response.Content}");
+                        return Found.Playing >= 0 ? Found : (-1, -1);
+                    }
+
+                    JObject Body = JObject.Parse(Response.Content);
+                    JArray Servers = Body["data"]?.Value<JArray>();
+
+                    // Cache every server on this page, not just the one being searched for -
+                    // this is what lets a second account in the same game (or a repeat poll of
+                    // this same JobId shortly after) skip the network entirely.
+                    if (Servers != null)
+                    {
+                        DateTime Now = DateTime.UtcNow;
+
+                        lock (ServerInfoCacheLock)
+                        {
+                            foreach (JToken Server in Servers)
+                            {
+                                string Id = Server["id"]?.Value<string>();
+
+                                if (string.IsNullOrEmpty(Id)) continue;
+
+                                int ServerPlaying = Server["playing"]?.Value<int>() ?? -1;
+                                int ServerMax = Server["maxPlayers"]?.Value<int>() ?? -1;
+
+                                ServerInfoCache[(PlaceId, Id)] = (ServerPlaying, ServerMax, Now);
+
+                                if (string.Equals(Id, JobId, StringComparison.OrdinalIgnoreCase))
+                                    Found = (ServerPlaying, ServerMax);
+                            }
+                        }
+
+                        if (Found.Playing >= 0) return Found;
+                    }
+
+                    Cursor = Body["nextPageCursor"]?.Value<string>();
+
+                    if (string.IsNullOrEmpty(Cursor)) break;
+
+                    // Small spacing between page requests to avoid tripping the rate limit in
+                    // the first place on games with a lot of servers to walk through.
+                    await Task.Delay(300);
+                }
+
+                // Not found after walking every page - most commonly means the target JobId is
+                // a private/reserved server (never listed under servers/Public at all) or the
+                // lookup ran before Roblox's own listing had indexed the new server yet. Logged
+                // because this previously failed completely silently, indistinguishable from a
+                // real bug.
+                Program.Logger.Warn($"No matching public server found for PlaceId {PlaceId} JobId {JobId}");
+                return (-1, -1);
+            }
+            finally
+            {
+                ServersRequestGate.Release();
+            }
         }
 
         /// <summary>

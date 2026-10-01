@@ -40,6 +40,15 @@ namespace RBX_Alt_Manager.Forms
             this.AutoRejoinJobIdLabel = new System.Windows.Forms.Label();
             this.AutoRejoinJobIdTextBox = new RBX_Alt_Manager.Classes.BorderedTextBox();
             this.ACTabs = new RBX_Alt_Manager.Classes.NBTabControl();
+            this.HeaderPanel = new System.Windows.Forms.Panel();
+            this.TabButtonsPanel = new System.Windows.Forms.FlowLayoutPanel();
+            this.ControlPageButton = new System.Windows.Forms.Button();
+            this.SettingsTabButton = new System.Windows.Forms.Button();
+            this.WebControlTabButton = new System.Windows.Forms.Button();
+            this.HelpPageButton = new System.Windows.Forms.Button();
+            this.TopStrip = new System.Windows.Forms.Panel();
+            this.UpdateButton = new System.Windows.Forms.Button();
+            this.VersionLabel = new System.Windows.Forms.Label();
             this.ControlPage = new System.Windows.Forms.TabPage();
             this.StatusSummaryLabel = new System.Windows.Forms.Label();
             this.CPanel = new System.Windows.Forms.Panel();
@@ -80,6 +89,25 @@ namespace RBX_Alt_Manager.Forms
             this.MaxInstanceLabel = new System.Windows.Forms.Label();
             this.MaxInstancesNum = new System.Windows.Forms.NumericUpDown();
             this.AutoCloseCB = new System.Windows.Forms.CheckBox();
+            this.WebControlTab = new System.Windows.Forms.TabPage();
+            this.WebControlLayoutPanel = new System.Windows.Forms.FlowLayoutPanel();
+            this.WebControlLabel = new System.Windows.Forms.Label();
+            this.WebControlTokenBox = new System.Windows.Forms.TextBox();
+            this.CopyWebControlUrlButton = new System.Windows.Forms.Button();
+            this.RegenerateTokenButton = new System.Windows.Forms.Button();
+            this.PublicAccessCB = new System.Windows.Forms.CheckBox();
+            this.NgrokAuthTokenLabel = new System.Windows.Forms.Label();
+            this.NgrokAuthTokenBox = new System.Windows.Forms.TextBox();
+            this.PublicAccessStatusLabel = new System.Windows.Forms.Label();
+            this.RelayLabel = new System.Windows.Forms.Label();
+            this.RelayEnabledCB = new System.Windows.Forms.CheckBox();
+            this.RelayUrlLabel = new System.Windows.Forms.Label();
+            this.RelayUrlBox = new System.Windows.Forms.TextBox();
+            this.RelayTokenLabel = new System.Windows.Forms.Label();
+            this.RelayTokenBox = new System.Windows.Forms.TextBox();
+            this.RelayMachineLabel = new System.Windows.Forms.Label();
+            this.RelayMachineBox = new System.Windows.Forms.TextBox();
+            this.RelayStatusLabel = new System.Windows.Forms.Label();
             this.HelpPage = new System.Windows.Forms.TabPage();
             this.label7 = new System.Windows.Forms.Label();
             this.NexusDocsButton = new System.Windows.Forms.Button();
@@ -92,6 +120,9 @@ namespace RBX_Alt_Manager.Forms
             this.CloseTimer = new System.Windows.Forms.Timer(this.components);
             this.Helper = new System.Windows.Forms.ToolTip(this.components);
             this.ControlsPanel.SuspendLayout();
+            this.TopStrip.SuspendLayout();
+            this.HeaderPanel.SuspendLayout();
+            this.TabButtonsPanel.SuspendLayout();
             this.ACTabs.SuspendLayout();
             this.ControlPage.SuspendLayout();
             this.CPanel.SuspendLayout();
@@ -106,6 +137,8 @@ namespace RBX_Alt_Manager.Forms
             this.tableLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.AutoCloseIntervalNum)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.MaxInstancesNum)).BeginInit();
+            this.WebControlTab.SuspendLayout();
+            this.WebControlLayoutPanel.SuspendLayout();
             this.HelpPage.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -160,17 +193,134 @@ namespace RBX_Alt_Manager.Forms
             this.Helper.SetToolTip(this.AutoRejoinJobIdTextBox, "Job ID for Auto Re-join. Selected accounts below will be teleported back to this Job ID if they leave or disconnect.");
             this.AutoRejoinJobIdTextBox.Leave += new System.EventHandler(this.AutoRejoinJobIdTextBox_Leave);
             //
+            // TopStrip
+            //
+            // ACTabs is Dock=Fill, so it always claims the entire client area at runtime
+            // regardless of the Size/Location set here at design time - any sibling placed
+            // at fixed coordinates ends up underneath it and gets painted over (NBTabControl
+            // clears its whole bounds every OnPaint). Docking this strip Top and adding it to
+            // the form BEFORE ACTabs reserves a slice ACTabs' Fill layout can't claim, so the
+            // button/label actually stay on screen instead of being covered.
+            this.TopStrip.BackColor = System.Drawing.SystemColors.Control;
+            this.TopStrip.Controls.Add(this.VersionLabel);
+            this.TopStrip.Controls.Add(this.UpdateButton);
+            this.TopStrip.Dock = System.Windows.Forms.DockStyle.Top;
+            this.TopStrip.Location = new System.Drawing.Point(0, 0);
+            this.TopStrip.Name = "TopStrip";
+            this.TopStrip.Size = new System.Drawing.Size(593, 26);
+            this.TopStrip.TabIndex = 5;
+            //
+            // UpdateButton
+            //
+            this.UpdateButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.UpdateButton.AutoSize = true;
+            this.UpdateButton.Location = new System.Drawing.Point(510, 2);
+            this.UpdateButton.Name = "UpdateButton";
+            this.UpdateButton.Padding = new System.Windows.Forms.Padding(6, 0, 6, 0);
+            this.UpdateButton.Size = new System.Drawing.Size(75, 23);
+            this.UpdateButton.TabIndex = 2;
+            this.UpdateButton.Text = "Update";
+            this.UpdateButton.UseVisualStyleBackColor = true;
+            this.UpdateButton.Visible = false;
+            this.UpdateButton.Click += new System.EventHandler(this.UpdateButton_Click);
+            //
+            // VersionLabel
+            //
+            // Anchored Top|Left (not Top|Right) so it never overlaps UpdateButton, which is
+            // also right-anchored and grows wider once its text becomes "Update to X.X.X.X" -
+            // the two used to sit side by side at fixed right-anchored offsets and the button's
+            // growth would cover this label entirely.
+            this.VersionLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
+            this.VersionLabel.AutoSize = true;
+            this.VersionLabel.Location = new System.Drawing.Point(8, 6);
+            this.VersionLabel.Name = "VersionLabel";
+            this.VersionLabel.Size = new System.Drawing.Size(60, 15);
+            this.VersionLabel.TabIndex = 4;
+            this.VersionLabel.Text = "v0.0.0.0";
+            this.VersionLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            //
+            // TabButtonsPanel
+            //
+            this.TabButtonsPanel.Controls.Add(this.ControlPageButton);
+            this.TabButtonsPanel.Controls.Add(this.SettingsTabButton);
+            this.TabButtonsPanel.Controls.Add(this.WebControlTabButton);
+            this.TabButtonsPanel.Controls.Add(this.HelpPageButton);
+            this.TabButtonsPanel.Dock = System.Windows.Forms.DockStyle.Top;
+            this.TabButtonsPanel.FlowDirection = System.Windows.Forms.FlowDirection.LeftToRight;
+            this.TabButtonsPanel.Location = new System.Drawing.Point(0, 26);
+            this.TabButtonsPanel.Name = "TabButtonsPanel";
+            this.TabButtonsPanel.Padding = new System.Windows.Forms.Padding(4, 4, 4, 0);
+            this.TabButtonsPanel.Size = new System.Drawing.Size(593, 32);
+            this.TabButtonsPanel.TabIndex = 6;
+            //
+            // ControlPageButton
+            //
+            this.ControlPageButton.Location = new System.Drawing.Point(4, 4);
+            this.ControlPageButton.Name = "ControlPageButton";
+            this.ControlPageButton.Size = new System.Drawing.Size(100, 24);
+            this.ControlPageButton.TabIndex = 0;
+            this.ControlPageButton.Text = "Control Panel";
+            this.ControlPageButton.UseVisualStyleBackColor = true;
+            this.ControlPageButton.Click += new System.EventHandler(this.TabNavButton_Click);
+            //
+            // SettingsTabButton
+            //
+            // Hidden by request - Settings is still reachable in code (ShowTabPage/SettingsTab
+            // still exist, e.g. for ApplyTheme's bookkeeping) but no longer has a nav button.
+            this.SettingsTabButton.Location = new System.Drawing.Point(110, 4);
+            this.SettingsTabButton.Name = "SettingsTabButton";
+            this.SettingsTabButton.Size = new System.Drawing.Size(100, 24);
+            this.SettingsTabButton.TabIndex = 1;
+            this.SettingsTabButton.Text = "Settings";
+            this.SettingsTabButton.UseVisualStyleBackColor = true;
+            this.SettingsTabButton.Visible = false;
+            this.SettingsTabButton.Click += new System.EventHandler(this.TabNavButton_Click);
+            //
+            // WebControlTabButton
+            //
+            this.WebControlTabButton.Location = new System.Drawing.Point(216, 4);
+            this.WebControlTabButton.Name = "WebControlTabButton";
+            this.WebControlTabButton.Size = new System.Drawing.Size(100, 24);
+            this.WebControlTabButton.TabIndex = 2;
+            this.WebControlTabButton.Text = "Web Control";
+            this.WebControlTabButton.UseVisualStyleBackColor = true;
+            this.WebControlTabButton.Click += new System.EventHandler(this.TabNavButton_Click);
+            //
+            // HelpPageButton
+            //
+            // Hidden by request - same as SettingsTabButton above.
+            this.HelpPageButton.Location = new System.Drawing.Point(322, 4);
+            this.HelpPageButton.Name = "HelpPageButton";
+            this.HelpPageButton.Size = new System.Drawing.Size(100, 24);
+            this.HelpPageButton.TabIndex = 3;
+            this.HelpPageButton.Text = "Help";
+            this.HelpPageButton.UseVisualStyleBackColor = true;
+            this.HelpPageButton.Visible = false;
+            this.HelpPageButton.Click += new System.EventHandler(this.TabNavButton_Click);
+            //
             // ACTabs
             //
+            // NBTabControl's native tab header row is unreliable to theme/render (see
+            // TabNavButton_Click/ShowTabPage in AccountControl.cs for the full story), so it's
+            // replaced entirely by TabButtonsPanel's buttons above. The header itself is
+            // pushed above HeaderPanel's visible area and clipped by it - HeaderPanel.Resize
+            // in AccountControl.cs recomputes ACTabs' Location/Size on every resize (instead
+            // of a fixed offset here) so this keeps working as the form/panel resizes.
             this.ACTabs.Controls.Add(this.ControlPage);
             this.ACTabs.Controls.Add(this.SettingsTab);
+            this.ACTabs.Controls.Add(this.WebControlTab);
             this.ACTabs.Controls.Add(this.HelpPage);
-            this.ACTabs.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.ACTabs.Location = new System.Drawing.Point(0, 0);
             this.ACTabs.Name = "ACTabs";
             this.ACTabs.SelectedIndex = 0;
-            this.ACTabs.Size = new System.Drawing.Size(593, 394);
             this.ACTabs.TabIndex = 1;
+            //
+            // HeaderPanel
+            //
+            this.HeaderPanel.Controls.Add(this.ACTabs);
+            this.HeaderPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.HeaderPanel.Name = "HeaderPanel";
+            this.HeaderPanel.TabIndex = 7;
+            this.HeaderPanel.Resize += new System.EventHandler(this.HeaderPanel_Resize);
             // 
             // ControlPage
             //
@@ -218,9 +368,14 @@ namespace RBX_Alt_Manager.Forms
             this.AccountsView.AllColumns.Add(this.cPlayers);
             this.AccountsView.AllowColumnReorder = true;
             this.AccountsView.AllowDrop = true;
-            this.AccountsView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
+            this.AccountsView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
+            // Default ListView border (Fixed3D) renders as a light bevel that doesn't respect
+            // the dark theme - it used to blend in next to the native tab header's own light
+            // chrome, but stands out now that the header is hidden. None + BorderColor removes
+            // that mismatched border entirely.
+            this.AccountsView.BorderStyle = System.Windows.Forms.BorderStyle.None;
             this.AccountsView.CellEditUseWholeCell = false;
             this.AccountsView.CheckBoxes = true;
             this.AccountsView.CheckedAspectName = "IsChecked";
@@ -341,7 +496,231 @@ namespace RBX_Alt_Manager.Forms
             this.SettingsTab.TabIndex = 3;
             this.SettingsTab.Text = "Settings";
             this.SettingsTab.UseVisualStyleBackColor = true;
-            // 
+            //
+            // WebControlTab
+            //
+            this.WebControlTab.Controls.Add(this.WebControlLayoutPanel);
+            this.WebControlTab.Location = new System.Drawing.Point(4, 25);
+            this.WebControlTab.Name = "WebControlTab";
+            this.WebControlTab.Padding = new System.Windows.Forms.Padding(3);
+            this.WebControlTab.Size = new System.Drawing.Size(585, 365);
+            this.WebControlTab.TabIndex = 4;
+            this.WebControlTab.Text = "Web Control";
+            this.WebControlTab.UseVisualStyleBackColor = true;
+            //
+            // WebControlLayoutPanel
+            //
+            this.WebControlLayoutPanel.Controls.Add(this.WebControlLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.WebControlTokenBox);
+            this.WebControlLayoutPanel.Controls.Add(this.CopyWebControlUrlButton);
+            this.WebControlLayoutPanel.Controls.Add(this.RegenerateTokenButton);
+            this.WebControlLayoutPanel.Controls.Add(this.PublicAccessCB);
+            this.WebControlLayoutPanel.Controls.Add(this.NgrokAuthTokenLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.NgrokAuthTokenBox);
+            this.WebControlLayoutPanel.Controls.Add(this.PublicAccessStatusLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayEnabledCB);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayUrlLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayUrlBox);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayTokenLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayTokenBox);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayMachineLabel);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayMachineBox);
+            this.WebControlLayoutPanel.Controls.Add(this.RelayStatusLabel);
+            this.WebControlLayoutPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.WebControlLayoutPanel.Location = new System.Drawing.Point(3, 3);
+            this.WebControlLayoutPanel.Name = "WebControlLayoutPanel";
+            this.WebControlLayoutPanel.Padding = new System.Windows.Forms.Padding(12);
+            this.WebControlLayoutPanel.Size = new System.Drawing.Size(579, 359);
+            this.WebControlLayoutPanel.TabIndex = 0;
+            //
+            // WebControlLabel
+            //
+            this.WebControlLabel.AutoSize = true;
+            this.WebControlLayoutPanel.SetFlowBreak(this.WebControlLabel, true);
+            this.WebControlLabel.Location = new System.Drawing.Point(15, 15);
+            this.WebControlLabel.Margin = new System.Windows.Forms.Padding(3, 0, 3, 0);
+            this.WebControlLabel.Name = "WebControlLabel";
+            this.WebControlLabel.Size = new System.Drawing.Size(120, 13);
+            this.WebControlLabel.TabIndex = 0;
+            this.WebControlLabel.Text = "Web Control Token";
+            //
+            // WebControlTokenBox
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.WebControlTokenBox, true);
+            this.WebControlTokenBox.Location = new System.Drawing.Point(15, 31);
+            this.WebControlTokenBox.Name = "WebControlTokenBox";
+            this.WebControlTokenBox.ReadOnly = true;
+            this.WebControlTokenBox.Size = new System.Drawing.Size(400, 20);
+            this.WebControlTokenBox.TabIndex = 1;
+            this.Helper.SetToolTip(this.WebControlTokenBox, "Anyone with this token can view and teleport your connected\r\naccounts from the" +
+        " /control web page. Treat it like a password.");
+            //
+            // CopyWebControlUrlButton
+            //
+            this.CopyWebControlUrlButton.Location = new System.Drawing.Point(15, 54);
+            this.CopyWebControlUrlButton.Name = "CopyWebControlUrlButton";
+            this.CopyWebControlUrlButton.Size = new System.Drawing.Size(160, 23);
+            this.CopyWebControlUrlButton.TabIndex = 2;
+            this.CopyWebControlUrlButton.Text = "Copy Web Control URL";
+            this.CopyWebControlUrlButton.UseVisualStyleBackColor = true;
+            this.CopyWebControlUrlButton.Click += new System.EventHandler(this.CopyWebControlUrlButton_Click);
+            //
+            // RegenerateTokenButton
+            //
+            this.RegenerateTokenButton.Location = new System.Drawing.Point(181, 54);
+            this.RegenerateTokenButton.Name = "RegenerateTokenButton";
+            this.RegenerateTokenButton.Size = new System.Drawing.Size(120, 23);
+            this.RegenerateTokenButton.TabIndex = 3;
+            this.RegenerateTokenButton.Text = "Regenerate Token";
+            this.RegenerateTokenButton.UseVisualStyleBackColor = true;
+            this.RegenerateTokenButton.Click += new System.EventHandler(this.RegenerateTokenButton_Click);
+            //
+            // PublicAccessCB
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.PublicAccessCB, true);
+            this.PublicAccessCB.AutoSize = true;
+            this.PublicAccessCB.Location = new System.Drawing.Point(15, 83);
+            this.PublicAccessCB.Margin = new System.Windows.Forms.Padding(3, 16, 3, 0);
+            this.PublicAccessCB.Name = "PublicAccessCB";
+            this.PublicAccessCB.Size = new System.Drawing.Size(190, 17);
+            this.PublicAccessCB.TabIndex = 4;
+            this.PublicAccessCB.Text = "Enable Public Access (ngrok)";
+            this.PublicAccessCB.UseVisualStyleBackColor = true;
+            this.Helper.SetToolTip(this.PublicAccessCB, "Makes the Web Control link work from anywhere on the internet,\r\nnot just this network, by tunneling it through ngrok.");
+            this.PublicAccessCB.CheckedChanged += new System.EventHandler(this.PublicAccessCB_CheckedChanged);
+            //
+            // NgrokAuthTokenLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.NgrokAuthTokenLabel, true);
+            this.NgrokAuthTokenLabel.AutoSize = true;
+            this.NgrokAuthTokenLabel.Location = new System.Drawing.Point(15, 103);
+            this.NgrokAuthTokenLabel.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
+            this.NgrokAuthTokenLabel.Name = "NgrokAuthTokenLabel";
+            this.NgrokAuthTokenLabel.Size = new System.Drawing.Size(160, 13);
+            this.NgrokAuthTokenLabel.TabIndex = 5;
+            this.NgrokAuthTokenLabel.Text = "ngrok Auth Token";
+            //
+            // NgrokAuthTokenBox
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.NgrokAuthTokenBox, true);
+            this.NgrokAuthTokenBox.Location = new System.Drawing.Point(15, 119);
+            this.NgrokAuthTokenBox.Name = "NgrokAuthTokenBox";
+            this.NgrokAuthTokenBox.Size = new System.Drawing.Size(400, 20);
+            this.NgrokAuthTokenBox.TabIndex = 6;
+            this.NgrokAuthTokenBox.UseSystemPasswordChar = true;
+            this.Helper.SetToolTip(this.NgrokAuthTokenBox, "Get a free token at https://dashboard.ngrok.com/get-started/your-authtoken");
+            this.NgrokAuthTokenBox.TextChanged += new System.EventHandler(this.NgrokAuthTokenBox_TextChanged);
+            //
+            // PublicAccessStatusLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.PublicAccessStatusLabel, true);
+            this.PublicAccessStatusLabel.AutoSize = true;
+            this.PublicAccessStatusLabel.Location = new System.Drawing.Point(15, 142);
+            this.PublicAccessStatusLabel.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
+            this.PublicAccessStatusLabel.Name = "PublicAccessStatusLabel";
+            this.PublicAccessStatusLabel.Size = new System.Drawing.Size(0, 13);
+            this.PublicAccessStatusLabel.TabIndex = 7;
+            //
+            // RelayLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayLabel, true);
+            this.RelayLabel.AutoSize = true;
+            this.RelayLabel.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+            this.RelayLabel.Location = new System.Drawing.Point(15, 160);
+            this.RelayLabel.Margin = new System.Windows.Forms.Padding(3, 16, 3, 0);
+            this.RelayLabel.Name = "RelayLabel";
+            this.RelayLabel.Size = new System.Drawing.Size(220, 15);
+            this.RelayLabel.TabIndex = 8;
+            this.RelayLabel.Text = "Show multiple machines on one link";
+            //
+            // RelayEnabledCB
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayEnabledCB, true);
+            this.RelayEnabledCB.AutoSize = true;
+            this.RelayEnabledCB.Location = new System.Drawing.Point(15, 181);
+            this.RelayEnabledCB.Margin = new System.Windows.Forms.Padding(3, 6, 3, 0);
+            this.RelayEnabledCB.Name = "RelayEnabledCB";
+            this.RelayEnabledCB.Size = new System.Drawing.Size(220, 17);
+            this.RelayEnabledCB.TabIndex = 9;
+            this.RelayEnabledCB.Text = "Report this machine to a relay";
+            this.RelayEnabledCB.UseVisualStyleBackColor = true;
+            this.Helper.SetToolTip(this.RelayEnabledCB, "Connects this machine to a relay server (which can be this\r\nsame machine, or another one) so its accounts show up on the\r\nsame /control link as other connected machines.");
+            this.RelayEnabledCB.CheckedChanged += new System.EventHandler(this.RelayEnabledCB_CheckedChanged);
+            //
+            // RelayUrlLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayUrlLabel, true);
+            this.RelayUrlLabel.AutoSize = true;
+            this.RelayUrlLabel.Location = new System.Drawing.Point(15, 201);
+            this.RelayUrlLabel.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
+            this.RelayUrlLabel.Name = "RelayUrlLabel";
+            this.RelayUrlLabel.Size = new System.Drawing.Size(100, 13);
+            this.RelayUrlLabel.TabIndex = 10;
+            this.RelayUrlLabel.Text = "Relay URL";
+            //
+            // RelayUrlBox
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayUrlBox, true);
+            this.RelayUrlBox.Location = new System.Drawing.Point(15, 217);
+            this.RelayUrlBox.Name = "RelayUrlBox";
+            this.RelayUrlBox.Size = new System.Drawing.Size(400, 20);
+            this.RelayUrlBox.TabIndex = 11;
+            this.Helper.SetToolTip(this.RelayUrlBox, "The Web Control URL of the machine acting as the relay, e.g.\r\nhttps://abc123.ngrok-free.app");
+            this.RelayUrlBox.TextChanged += new System.EventHandler(this.RelaySettings_TextChanged);
+            //
+            // RelayTokenLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayTokenLabel, true);
+            this.RelayTokenLabel.AutoSize = true;
+            this.RelayTokenLabel.Location = new System.Drawing.Point(15, 240);
+            this.RelayTokenLabel.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
+            this.RelayTokenLabel.Name = "RelayTokenLabel";
+            this.RelayTokenLabel.Size = new System.Drawing.Size(100, 13);
+            this.RelayTokenLabel.TabIndex = 12;
+            this.RelayTokenLabel.Text = "Relay Token";
+            //
+            // RelayTokenBox
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayTokenBox, true);
+            this.RelayTokenBox.Location = new System.Drawing.Point(15, 256);
+            this.RelayTokenBox.Name = "RelayTokenBox";
+            this.RelayTokenBox.Size = new System.Drawing.Size(400, 20);
+            this.RelayTokenBox.TabIndex = 13;
+            this.Helper.SetToolTip(this.RelayTokenBox, "The Web Control Token shown on the relay machine's own\r\nWeb Control tab.");
+            this.RelayTokenBox.TextChanged += new System.EventHandler(this.RelaySettings_TextChanged);
+            //
+            // RelayMachineLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayMachineLabel, true);
+            this.RelayMachineLabel.AutoSize = true;
+            this.RelayMachineLabel.Location = new System.Drawing.Point(15, 279);
+            this.RelayMachineLabel.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
+            this.RelayMachineLabel.Name = "RelayMachineLabel";
+            this.RelayMachineLabel.Size = new System.Drawing.Size(150, 13);
+            this.RelayMachineLabel.TabIndex = 14;
+            this.RelayMachineLabel.Text = "This Machine's Name";
+            //
+            // RelayMachineBox
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayMachineBox, true);
+            this.RelayMachineBox.Location = new System.Drawing.Point(15, 295);
+            this.RelayMachineBox.Name = "RelayMachineBox";
+            this.RelayMachineBox.Size = new System.Drawing.Size(200, 20);
+            this.RelayMachineBox.TabIndex = 15;
+            this.Helper.SetToolTip(this.RelayMachineBox, "Shown as the machine name on the shared /control page -\r\npick something that tells accounts on this machine apart\r\nfrom other connected machines.");
+            this.RelayMachineBox.TextChanged += new System.EventHandler(this.RelaySettings_TextChanged);
+            //
+            // RelayStatusLabel
+            //
+            this.WebControlLayoutPanel.SetFlowBreak(this.RelayStatusLabel, true);
+            this.RelayStatusLabel.AutoSize = true;
+            this.RelayStatusLabel.Location = new System.Drawing.Point(15, 318);
+            this.RelayStatusLabel.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
+            this.RelayStatusLabel.Name = "RelayStatusLabel";
+            this.RelayStatusLabel.Size = new System.Drawing.Size(0, 13);
+            this.RelayStatusLabel.TabIndex = 16;
+            //
             // SettingsLayoutPanel
             // 
             this.SettingsLayoutPanel.Controls.Add(this.StartOnLaunch);
@@ -588,9 +967,9 @@ namespace RBX_Alt_Manager.Forms
             this.CloseRoblox.Text = "Close Roblox";
             this.CloseRoblox.UseVisualStyleBackColor = true;
             this.CloseRoblox.Click += new System.EventHandler(this.CloseRoblox_Click);
-            // 
+            //
             // tableLayoutPanel1
-            // 
+            //
             this.tableLayoutPanel1.AutoSize = true;
             this.tableLayoutPanel1.ColumnCount = 2;
             this.tableLayoutPanel1.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 50F));
@@ -800,7 +1179,17 @@ namespace RBX_Alt_Manager.Forms
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(593, 394);
-            this.Controls.Add(this.ACTabs);
+            // WinForms lays out Dock=Fill/Top siblings by processing the LAST-added control
+            // first, giving it first claim on space - verified empirically with an isolated
+            // repro, since the intuitive "first added, first docked" reading is backwards and
+            // silently produces overlapping controls (this cost real debugging time to catch,
+            // since nothing throws - controls just overlap with no error). To get the visual
+            // stack TopStrip (top) -> TabButtonsPanel -> HeaderPanel (fills the rest), they
+            // must be added in the OPPOSITE order: Fill control first, then Top controls
+            // bottom-most-visually first, topmost-visually last.
+            this.Controls.Add(this.HeaderPanel);
+            this.Controls.Add(this.TabButtonsPanel);
+            this.Controls.Add(this.TopStrip);
             this.MinimumSize = new System.Drawing.Size(475, 200);
             this.Name = "AccountControl";
             this.ShowIcon = false;
@@ -809,6 +1198,9 @@ namespace RBX_Alt_Manager.Forms
             this.Load += new System.EventHandler(this.AccountControl_Load);
             this.ControlsPanel.ResumeLayout(false);
             this.ControlsPanel.PerformLayout();
+            this.TopStrip.ResumeLayout(false);
+            this.TopStrip.PerformLayout();
+            this.TabButtonsPanel.ResumeLayout(false);
             this.ACTabs.ResumeLayout(false);
             this.ControlPage.ResumeLayout(false);
             this.CPanel.ResumeLayout(false);
@@ -826,8 +1218,12 @@ namespace RBX_Alt_Manager.Forms
             this.tableLayoutPanel1.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.AutoCloseIntervalNum)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.MaxInstancesNum)).EndInit();
+            this.WebControlTab.ResumeLayout(false);
+            this.WebControlLayoutPanel.ResumeLayout(false);
+            this.WebControlLayoutPanel.PerformLayout();
             this.HelpPage.ResumeLayout(false);
             this.HelpPage.PerformLayout();
+            this.HeaderPanel.ResumeLayout(false);
             this.ResumeLayout(false);
 
         }
@@ -837,6 +1233,9 @@ namespace RBX_Alt_Manager.Forms
         private System.Windows.Forms.FlowLayoutPanel ControlsPanel;
         private System.Windows.Forms.TabPage ControlPage;
         private System.Windows.Forms.Label StatusSummaryLabel;
+        private System.Windows.Forms.Button UpdateButton;
+        private System.Windows.Forms.Label VersionLabel;
+        private System.Windows.Forms.Panel TopStrip;
         public BrightIdeasSoftware.ObjectListView AccountsView;
         private BrightIdeasSoftware.OLVColumn cStatus;
         private BrightIdeasSoftware.OLVColumn cUsername;
@@ -871,10 +1270,35 @@ namespace RBX_Alt_Manager.Forms
         private System.Windows.Forms.ToolStripMenuItem copyJobIdToolStripMenuItem;
         private System.Windows.Forms.Button MinimizeRoblox;
         private System.Windows.Forms.Button CloseRoblox;
+        private System.Windows.Forms.TabPage WebControlTab;
+        private System.Windows.Forms.FlowLayoutPanel WebControlLayoutPanel;
+        private System.Windows.Forms.Label WebControlLabel;
+        private System.Windows.Forms.TextBox WebControlTokenBox;
+        private System.Windows.Forms.Button CopyWebControlUrlButton;
+        private System.Windows.Forms.Button RegenerateTokenButton;
+        private System.Windows.Forms.CheckBox PublicAccessCB;
+        private System.Windows.Forms.Label NgrokAuthTokenLabel;
+        private System.Windows.Forms.TextBox NgrokAuthTokenBox;
+        private System.Windows.Forms.Label PublicAccessStatusLabel;
+        private System.Windows.Forms.Label RelayLabel;
+        private System.Windows.Forms.CheckBox RelayEnabledCB;
+        private System.Windows.Forms.Label RelayUrlLabel;
+        private System.Windows.Forms.TextBox RelayUrlBox;
+        private System.Windows.Forms.Label RelayTokenLabel;
+        private System.Windows.Forms.TextBox RelayTokenBox;
+        private System.Windows.Forms.Label RelayMachineLabel;
+        private System.Windows.Forms.TextBox RelayMachineBox;
+        private System.Windows.Forms.Label RelayStatusLabel;
         private System.Windows.Forms.CheckBox AutoMinimizeCB;
         private System.Windows.Forms.Timer MinimzeTimer;
         private System.Windows.Forms.CheckBox StartOnLaunch;
         private NBTabControl ACTabs;
+        private System.Windows.Forms.Panel HeaderPanel;
+        private System.Windows.Forms.FlowLayoutPanel TabButtonsPanel;
+        private System.Windows.Forms.Button ControlPageButton;
+        private System.Windows.Forms.Button SettingsTabButton;
+        private System.Windows.Forms.Button WebControlTabButton;
+        private System.Windows.Forms.Button HelpPageButton;
         private CheckBox AutoCloseCB;
         private Label ACLabel;
         private Label label8;

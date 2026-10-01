@@ -18,6 +18,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -64,6 +65,25 @@ public static class Utilities
     {
         if (_Control.InvokeRequired)
             _Control.Invoke(_Action);
+        else
+            _Action();
+    }
+
+    // Non-blocking counterpart to InvokeIfRequired, for callers that don't need to wait for
+    // the UI thread to actually run the action (fire-and-forget UI touch-ups like a grid
+    // refresh or a status label update). InvokeIfRequired's Control.Invoke is synchronous -
+    // it blocks the calling (background) thread until the UI thread drains its message queue
+    // down to that call. That's fine for one call at a time, but when many background threads
+    // call it near-simultaneously (e.g. a Web Control bulk action teleporting/auto-rejoining
+    // dozens of accounts at once, each of whose WebSocket responses - SetJobId, SetPlaceId,
+    // connect/disconnect - independently call back into ControlledAccount's UI touch-ups),
+    // every one of those threads piles up waiting on the same UI thread in quick succession,
+    // which is perceived as the main window freezing. BeginInvoke just posts the call and
+    // returns immediately, so no caller thread ever blocks on it.
+    public static void BeginInvokeIfRequired(this Control _Control, MethodInvoker _Action)
+    {
+        if (_Control.InvokeRequired)
+            _Control.BeginInvoke(_Action);
         else
             _Action();
     }
@@ -302,6 +322,73 @@ public static Color Lerp(this Color s, Color t, float k)
     private static readonly DateTime Epoch = new DateTime(1970, 1, 1);
 
     public static bool IsConnectedToInternet() => InternetGetConnectedState(out int _, 0);
+
+    /// <summary>
+    /// The version currently running, read from the exe's own FileVersion (set via
+    /// AssemblyFileVersion). Shared by the update-check logic and any UI that wants to
+    /// display "current version" text (e.g. an Update button).
+    /// </summary>
+    public static string CurrentVersion => FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).FileVersion;
+
+    /// <summary>
+    /// Hits the GitHub "latest release" API for this project's repo and compares its
+    /// tag_name against the running exe's FileVersion. Shared by the startup auto-check
+    /// (AccountManager) and the manual Update button (AccountControl) so both use the same
+    /// version-parsing behavior instead of two copies drifting apart.
+    /// </summary>
+    /// <returns>(HasUpdate, LatestVersion) - LatestVersion is null if the check failed (network error, unexpected API response, etc).</returns>
+    public static (bool HasUpdate, string LatestVersion) CheckForUpdate()
+    {
+        try
+        {
+            System.Net.ServicePointManager.Expect100Continue = true;
+            System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Ssl3;
+
+            System.Net.WebClient WC = new System.Net.WebClient();
+            WC.Headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36";
+            string Releases = WC.DownloadString("https://api.github.com/repos/balloonx37-cyber/rbx/releases/latest");
+
+            // The release's tag is always the fixed "0.0" (Updater.cs's -update flow depends on
+            // that fixed tag to find the download), so it can't double as a real version number.
+            // The actual version lives in the release's title ("name") instead - set that to the
+            // real version string (e.g. "3.6.1.0") whenever a new release is published.
+            Match match = Regex.Match(Releases, @"""name"":\s*""?([^""]+)");
+
+            if (!match.Success) return (false, null);
+
+            string LatestVersion = match.Groups[1].Value;
+
+            string Current = CurrentVersion.TrimEnd('.', '0').Replace(".", string.Empty);
+            string New = LatestVersion.TrimEnd('.', '0').Replace(".", string.Empty);
+
+            if (Current.Length > New.Length)
+                New = New.PadRight(Current.Length, '0');
+            else if (New.Length > Current.Length)
+                Current = Current.PadRight(New.Length, '0');
+
+            bool HasUpdate = double.TryParse(New, out double NV) && double.TryParse(Current, out double CV) && NV > CV;
+
+            return (HasUpdate, LatestVersion);
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
+    /// <summary>
+    /// Copies the running exe to "Auto Update.exe" and launches it with "-update", then
+    /// exits this process. Extracted from AccountManager's startup update-check so the
+    /// manual Update button can trigger the exact same update flow.
+    /// </summary>
+    public static void TriggerUpdate()
+    {
+        string AFN = Path.Combine(Directory.GetCurrentDirectory(), "Auto Update.exe");
+
+        File.WriteAllBytes(AFN, File.ReadAllBytes(Application.ExecutablePath));
+        Process.Start(AFN, "-update");
+        Environment.Exit(1);
+    }
 
 }
 

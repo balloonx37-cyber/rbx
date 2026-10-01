@@ -247,6 +247,16 @@ do -- Nexus
 
             self.Connected:Fire()
 
+            -- The connect URL's jobId/placeId are only accurate at the moment this line runs.
+            -- If the previous socket survives a teleport without OnClose ever firing (this
+            -- exploit's websocket doesn't get torn down by TeleportService - see the OnTeleport
+            -- handler above), the account manager can end up reusing a connection tracked under
+            -- the same username and never notice the server changed. Resending both explicitly
+            -- right after every (re)connect keeps the Job ID / player count columns from going
+            -- stale after a teleport or rejoin.
+            self:SetPlaceId(game.PlaceId)
+            self:SetJobId(game.JobId)
+
             while self.IsConnected do
                 local Success, Error = pcall(self.Send, self, 'ping')
 

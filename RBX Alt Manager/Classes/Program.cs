@@ -54,6 +54,13 @@ namespace RBX_Alt_Manager
         {
             int Stupid = 1337;
 
+            // Sweeps up any ".rbxupdold*" files left behind by a previous Auto Update run.
+            // The updater renames old files (rather than deleting them) to work around a
+            // self-lock in its own process - see Updater.cs's Extract()/RetryIO comments for
+            // why - and this main app is the first process afterwards guaranteed to never
+            // have had them open, so deleting them here always succeeds cleanly.
+            Auto_Update.AutoUpdater.CleanupStaleRenamedFiles(Environment.CurrentDirectory);
+
             try
             {
                 if (Directory.GetParent(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)).FullName.Contains(Path.GetTempPath().Remove(Path.GetTempPath().Length - 1)))

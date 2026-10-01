@@ -95,10 +95,23 @@ namespace RBX_Alt_Manager
         [DllImport("DwmApi")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, int[] attrValue, int attrSize);
 
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
         public static void SetDarkBar(IntPtr Handle)
         {
-            if (ThemeEditor.UseDarkTopBar && DwmSetWindowAttribute(Handle, 19, new[] { 1 }, 4) != 0)
-                DwmSetWindowAttribute(Handle, 20, new[] { 1 }, 4);
+            if (!ThemeEditor.UseDarkTopBar) return;
+
+            if (DwmSetWindowAttribute(Handle, 19, new[] { 1 }, 4) != 0)
+                DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, new[] { 1 }, 4);
+
+            // DWMWA_BORDER_COLOR was tried here to theme the window frame to match the dark
+            // background (DWMWA_USE_IMMERSIVE_DARK_MODE above only darkens the title bar, not
+            // the surrounding frame) - confirmed by direct user testing that setting it is
+            // what caused a distinctly light/white line to appear around the window frame on
+            // this system, worse than Windows' own default frame color. The exact DWM
+            // mechanism behind that wasn't nailed down (isolated repros of the same call
+            // didn't reproduce it), so rather than ship an unverified theory, this is left
+            // unset and the window keeps Windows' own default frame color.
         }
 
         public AccountManager()
@@ -700,58 +713,10 @@ namespace RBX_Alt_Manager
             if (General.Get<bool>("HideUsernames"))
                 HideUsernamesCheckbox.Checked = true;
 
-            if (General.Get<bool>("CheckForUpdates"))
-            {
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        ServicePointManager.Expect100Continue = true;
-                        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | SecurityProtocolType.Ssl3;
-
-                        WebClient WC = new WebClient();
-                        Assembly assembly = Assembly.GetExecutingAssembly();
-                        FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(assembly.Location);
-                        WC.Headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36";
-                        string Releases = WC.DownloadString("https://api.github.com/repos/balloonx37-cyber/rbx/releases/latest");
-                        Match match = Regex.Match(Releases, @"""tag_name"":\s*""?([^""]+)");
-
-                        if (match.Success)
-                        {
-                            string Current = fvi.FileVersion.TrimEnd('.', '0').Replace(".", string.Empty);
-                            string New = match.Groups[1].Value.TrimEnd('.', '0').Replace(".", string.Empty);
-
-                            if (Current.Length > New.Length)
-                                New = New.PadRight(Current.Length, '0');
-                            else if (New.Length > Current.Length)
-                                Current = Current.PadRight(New.Length, '0');
-
-                            if (double.TryParse(New, out double NV) && double.TryParse(Current, out double CV) && NV > CV)
-                            {
-                                bool ShouldUpdate = Utilities.YesNoPrompt("Roblox Account Manager", "An update is available", "Would you like to update now?");
-
-                                if (ShouldUpdate)
-                                {
-                                    File.WriteAllBytes(AFN, File.ReadAllBytes(Application.ExecutablePath));
-                                    Process.Start(AFN, "-update");
-                                    Environment.Exit(1);
-                                    //if (File.Exists(AFN))
-                                    //{
-                                    //    Process.Start(AFN, "skip");
-                                    //    Environment.Exit(1);
-                                    //}
-                                    //else
-                                    //{
-                                    //    MessageBox.Show("You do not have the auto updater downloaded, go to the github page and download the latest release.");
-                                    //    Process.Start("https://github.com/ic3w0lf22/Roblox-Account-Manager/releases");
-                                    //}
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                });
-            }
+            // Update checking/prompting now lives entirely in AccountControl's Update button
+            // (no popup - the button itself only appears when an update exists, and clicking
+            // it is the confirmation). Keeping a second silent check here too would mean two
+            // update flows running independently with no shared state.
 
             if (!General.Get<bool>("DisableAgingAlert"))
                 Username.Renderer = new AccountRenderer();
@@ -2089,8 +2054,16 @@ namespace RBX_Alt_Manager
                     Left = Left
                 };
                 ControlForm.Show();
-                ControlForm.ApplyTheme();
             }
+
+            // ControlForm is actually created up front in the constructor (ControlForm = new
+            // AccountControl()), so the `else` branch above almost never runs in practice -
+            // startup calls this via LaunchNexus.PerformClick() while ControlForm is already
+            // non-null, which used to skip ApplyTheme() entirely. That left every themed
+            // color on Account Control stuck on .NET's untouched defaults instead of this
+            // app's actual theme. Calling it here on every show is cheap and idempotent, and
+            // guarantees the form is themed before it's ever visible to the user.
+            ControlForm.ApplyTheme();
         }
 
         private async Task LaunchAccounts(List<Account> Accounts, long PlaceID, string JobID, bool FollowUser = false, bool VIPServer = false)

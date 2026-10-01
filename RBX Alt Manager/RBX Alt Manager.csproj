@@ -533,6 +533,9 @@
     </Compile>
     <Compile Include="Nexus\Command.cs" />
     <Compile Include="Nexus\WebsocketServer.cs" />
+    <Compile Include="Nexus\WebControlPage.cs" />
+    <Compile Include="Nexus\NgrokManager.cs" />
+    <Compile Include="Nexus\RelayHub.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Classes\Server.cs" />
     <Compile Include="Forms\LogWindow.cs">
