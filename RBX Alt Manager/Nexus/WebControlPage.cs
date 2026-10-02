@@ -172,6 +172,39 @@ namespace RBX_Alt_Manager.Nexus
   .bulk-bar .msg {
     margin-top: 0;
   }
+  .machine-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .machine-card {
+    background: #1a1c22;
+    border: 1px solid #2a2d35;
+    border-radius: 6px;
+    padding: 10px 14px;
+    min-width: 160px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .machine-card:hover { border-color: #3b82f6; }
+  .machine-card.active { border-color: #2563eb; background: #1e2a3d; }
+  .machine-card .machine-name {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .machine-card .machine-stats {
+    font-size: 12px;
+    color: #8a8f98;
+  }
+  .machine-card .machine-stats .online-count {
+    color: #4ade80;
+  }
+  .machine-card .machine-stats .offline-count {
+    color: #6b7280;
+  }
 </style>
 </head>
 <body>
@@ -194,6 +227,7 @@ namespace RBX_Alt_Manager.Nexus
     <button id=""bulkAutoRejoinOff"">Disable Auto Re-join</button>
   </div>
   <div class=""msg"" id=""bulkMsg""></div>
+  <div id=""machineSummary"" class=""machine-summary hidden""></div>
   <table id=""accountsTable"" class=""hidden"">
     <thead>
       <tr>
@@ -265,18 +299,36 @@ namespace RBX_Alt_Manager.Nexus
   // buttons live outside #accountsBody (see their wiring further down) so they need their
   // own reference to the current rows rather than reading them back out of the DOM.
   var lastAccounts = [];
+  // The filtered subset actually rendered in the table (same as lastAccounts when no
+  // machine filter is active) - bulk actions and selectAll must only touch visible rows.
+  var lastVisible = [];
+
+  // The filtered subset actually shown in the table (may equal lastAccounts when no
+  // machine filter is active) - selectAll must only toggle these visible rows, otherwise
+  // ticking ""select all"" while a machine filter is on would silently check hidden rows
+  // from other machines too.
+  // When set (via clicking a machine card), render() only shows that machine's rows and
+  // the card gets a highlighted border. Clicking the same card again clears the filter.
+  var machineFilter = null;
 
   function rowKey(a) {
     return (a.machine || '') + '|' + a.username;
+  }
+
+  function visibleAccounts() {
+    return machineFilter
+      ? lastAccounts.filter(function (a) { return (a.machine || '(this machine)') === machineFilter; })
+      : lastAccounts;
   }
 
   function updateBulkBar() {
     var keys = Object.keys(selectedKeys).filter(function (k) { return selectedKeys[k]; });
     var bar = document.getElementById('bulkBar');
     var selectAll = document.getElementById('selectAll');
+    var visible = visibleAccounts();
 
-    selectAll.checked = lastAccounts.length > 0 && keys.length === lastAccounts.length;
-    selectAll.indeterminate = keys.length > 0 && keys.length < lastAccounts.length;
+    selectAll.checked = visible.length > 0 && keys.length === visible.length;
+    selectAll.indeterminate = keys.length > 0 && keys.length < visible.length;
 
     if (keys.length === 0) {
       bar.classList.add('hidden');
@@ -287,10 +339,65 @@ namespace RBX_Alt_Manager.Nexus
     document.getElementById('bulkCount').textContent = keys.length + ' selected';
   }
 
+  function renderMachineSummary(accounts) {
+    var el = document.getElementById('machineSummary');
+
+    // Group by machine name (relay mode) - in non-relay mode every row has machine=null
+    // so they all collapse into one ""(this machine)"" card.
+    var byMachine = {};
+    var order = [];
+
+    accounts.forEach(function (a) {
+      var m = a.machine || '(this machine)';
+
+      if (!byMachine[m]) {
+        byMachine[m] = { total: 0, online: 0 };
+        order.push(m);
+      }
+
+      byMachine[m].total++;
+
+      if (a.status === 'Online') byMachine[m].online++;
+    });
+
+    var anyOnline = order.some(function (m) { return byMachine[m].online > 0; });
+
+    el.innerHTML =
+      '<div class=""machine-summary-title"">' +
+      order.length + ' machine' + (order.length === 1 ? '' : 's') + ' – ' +
+      (anyOnline ? '<span class=""online-count"">' +
+        order.filter(function (m) { return byMachine[m].online > 0; }).length +
+        ' online</span>' : '<span class=""offline-count"">all offline</span>') +
+      '</div>' +
+      order.map(function (m) {
+        var s = byMachine[m];
+        var active = machineFilter === m ? ' active' : '';
+
+        return '<div class=""machine-card' + active + '"" data-machine=""' + escapeHtml(m) + '"">' +
+          '<div class=""machine-name""><span class=""dot ' + (s.online > 0 ? 'online' : 'offline') + '""></span>' + escapeHtml(m) + '</div>' +
+          '<div class=""machine-stats"">' +
+          '<span class=""online-count"">' + s.online + ' online</span>' +
+          ' / ' + s.total + ' account' + (s.total === 1 ? '' : 's') +
+          '</div>' +
+          '</div>';
+      }).join('');
+
+    el.classList.remove('hidden');
+
+    el.querySelectorAll('.machine-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        var m = this.getAttribute('data-machine');
+        machineFilter = (machineFilter === m) ? null : m;
+        render(lastAccounts);
+      });
+    });
+  }
+
   function render(accounts) {
     if (!accounts.length) {
       tableEl.classList.add('hidden');
       emptyEl.classList.remove('hidden');
+      document.getElementById('machineSummary').classList.add('hidden');
       return;
     }
 
@@ -298,11 +405,18 @@ namespace RBX_Alt_Manager.Nexus
     tableEl.classList.remove('hidden');
 
     lastAccounts = accounts;
+    renderMachineSummary(accounts);
+
+    // When a machine card is selected, only show that machine's rows in the table -
+    // the summary cards always show every machine so the user can switch or clear the filter.
+    var visible = machineFilter
+      ? accounts.filter(function (a) { return (a.machine || '(this machine)') === machineFilter; })
+      : accounts;
 
     // Capture the live DOM values (not just jobInputDrafts) right before they get destroyed
     // by the innerHTML replacement below, so an in-progress edit from the instant before this
     // poll landed isn't lost either.
-    accounts.forEach(function (a, i) {
+    visible.forEach(function (a, i) {
       var existing = document.getElementById('jobinput-' + i);
       if (existing) jobInputDrafts[a.username] = existing.value;
     });
@@ -315,7 +429,7 @@ namespace RBX_Alt_Manager.Nexus
       if (!currentKeys[k]) delete selectedKeys[k];
     });
 
-    bodyEl.innerHTML = accounts.map(function (a, i) {
+    bodyEl.innerHTML = visible.map(function (a, i) {
       var dotClass = a.status === 'Online' ? 'online' : 'offline';
       var players = (a.players >= 0 && a.maxPlayers >= 0) ? (a.players + '/' + a.maxPlayers) : '';
       var game = a.placeName || a.placeId || '';
@@ -349,13 +463,13 @@ namespace RBX_Alt_Manager.Nexus
         '</tr>';
     }).join('');
 
-    accounts.forEach(function (a, i) {
+    visible.forEach(function (a, i) {
       document.getElementById('jobinput-' + i).addEventListener('input', function () {
         jobInputDrafts[a.username] = this.value;
       });
     });
 
-    accounts.forEach(function (a, i) {
+    visible.forEach(function (a, i) {
       document.getElementById('go-' + i).addEventListener('click', function () {
         var btn = this;
         var input = document.getElementById('jobinput-' + i);
@@ -462,7 +576,7 @@ namespace RBX_Alt_Manager.Nexus
   document.getElementById('selectAll').addEventListener('change', function () {
     var checked = this.checked;
 
-    lastAccounts.forEach(function (a) { selectedKeys[rowKey(a)] = checked; });
+    visibleAccounts().forEach(function (a) { selectedKeys[rowKey(a)] = checked; });
 
     document.querySelectorAll('.row-select').forEach(function (cb) { cb.checked = checked; });
 
