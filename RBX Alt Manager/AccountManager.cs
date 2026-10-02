@@ -776,7 +776,7 @@ namespace RBX_Alt_Manager
                 {
                     int Count = 0;
 
-                    foreach (var Account in AccountsList)
+                    foreach (var Account in AccountsList.ToList())
                     {
                         if (Account.GetField("NoCookieRefresh") != "true" && (DateTime.Now - Account.LastUse).TotalDays > 20 && (DateTime.Now - Account.LastAttemptedRefresh).TotalDays >= 7)
                         {

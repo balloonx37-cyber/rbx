@@ -46,6 +46,21 @@ namespace RBX_Alt_Manager.Classes
         // bursts.
         private static readonly SemaphoreSlim ServersRequestGate = new SemaphoreSlim(1, 1);
 
+        // Both multiget-place-details and servers/Public work fine anonymously - a cookie only
+        // buys a higher rate limit. Accounts that showed up through Nexus (executor-run
+        // Nexus.lua) were auto-added with just a Username/UserID and no cookie, so
+        // LastValidAccount.SecurityToken is null for them, and AddCookie with a null value
+        // throws "The 'Value'='<null>' part of the cookie is invalid" - which is what left the
+        // Map and Players columns permanently blank. Send the cookie only when there actually
+        // is one, otherwise make the request anonymously.
+        private static void AddAuthCookie(RestRequest Request)
+        {
+            string Token = AccountManager.LastValidAccount?.SecurityToken;
+
+            if (!string.IsNullOrEmpty(Token))
+                Request.AddCookie(".ROBLOSECURITY", Token, "/", ".roblox.com");
+        }
+
         // Every server seen while walking a PlaceId's list gets cached here (not just the one
         // JobId that was being looked for) - a full walk for one account's lookup ends up
         // pre-answering every other account sitting in the same game for free, and even a
@@ -107,6 +122,11 @@ namespace RBX_Alt_Manager.Classes
 
             if (PlaceDetails.TryGetValue(PlaceId, out GameDetails Cached)) return Cached.name;
 
+            // Queue the PlaceId BEFORE starting the batch task - DoPlaceRequest drains
+            // PendingPlace and exits as soon as it's empty, so adding afterwards could miss the
+            // window entirely and leave the game name (the grid's Map column) unresolved.
+            PendingPlace.Add(PlaceId);
+
             lock (PlaceTaskLock)
             {
                 if (CurrentPlaceTask == null || CurrentPlaceTask.IsCompleted || CurrentPlaceTask.IsCanceled)
@@ -115,8 +135,6 @@ namespace RBX_Alt_Manager.Classes
                     CurrentPlaceTask = Task.Run(DoPlaceRequest);
                 }
             }
-
-            PendingPlace.Add(PlaceId);
 
             await CurrentPlaceTask;
 
@@ -179,7 +197,7 @@ namespace RBX_Alt_Manager.Classes
                 {
                     var Request = new RestRequest($"v1/games/{PlaceId}/servers/Public?sortOrder=Asc&limit=100{(string.IsNullOrEmpty(Cursor) ? "" : $"&cursor={Uri.EscapeDataString(Cursor)}")}");
 
-                    Request.AddCookie(".ROBLOSECURITY", AccountManager.LastValidAccount?.SecurityToken, "/", ".roblox.com");
+                    AddAuthCookie(Request);
 
                     RestResponse Response = await GamesAPI.ExecuteAsync(Request);
 
@@ -331,9 +349,6 @@ namespace RBX_Alt_Manager.Classes
         {
             await Task.Delay(50);
 
-            while (AccountManager.LastValidAccount == null)
-                await Task.Delay(80);
-
             while (PendingPlace.Count > 0)
             {
                 List<long> Pending = new List<long>();
@@ -349,7 +364,7 @@ namespace RBX_Alt_Manager.Classes
 
                 var Request = new RestRequest($"v1/games/multiget-place-details?placeIds={string.Join("&placeIds=", Pending.ToArray())}");
 
-                Request.AddCookie(".ROBLOSECURITY", AccountManager.LastValidAccount?.SecurityToken, "/", ".roblox.com");
+                AddAuthCookie(Request);
 
                 RestResponse DetailsResponse = await GamesAPI.ExecuteAsync(Request);
 
