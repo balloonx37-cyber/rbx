@@ -124,6 +124,22 @@ namespace RBX_Alt_Manager.Nexus
   }
   .msg.ok { color: #4ade80; }
   .msg.err { color: #f87171; }
+  .queue-progress {
+    width: 100%;
+    max-width: 420px;
+    height: 6px;
+    margin-top: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #2a2d35;
+  }
+  .queue-progress > div {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+    transition: width 0.25s linear;
+  }
   #tokenGate {
     padding: 40px 20px;
     text-align: center;
@@ -227,6 +243,7 @@ namespace RBX_Alt_Manager.Nexus
     <button id=""bulkAutoRejoinOff"">Disable Auto Re-join</button>
   </div>
   <div class=""msg"" id=""bulkMsg""></div>
+  <div class=""queue-progress hidden"" id=""queueProgress""><div id=""queueProgressFill""></div></div>
   <div id=""machineSummary"" class=""machine-summary hidden""></div>
   <table id=""accountsTable"" class=""hidden"">
     <thead>
@@ -597,11 +614,74 @@ namespace RBX_Alt_Manager.Nexus
 
   // Shared by all three bulk buttons - fires the same per-account request the single-row
   // controls already use (via the existing /control/api/teleport and /control/api/autorejoin
-  // endpoints - there's no separate bulk endpoint on the server), just fanned out over every
-  // selected row with Promise.all so they run concurrently instead of waiting on each other,
-  // then reports how many succeeded. requireJobId is false for ""Disable Auto Re-join"" - the
-  // server only requires a jobId when actually enabling it (see HandleWebControlAutoRejoin's
-  // `if (Enabled && string.IsNullOrEmpty(JobId))`), turning it off doesn't need one.
+  // endpoints - there's no separate bulk endpoint on the server). Requests are sent
+  // SEQUENTIALLY (one at a time) rather than concurrently - each relay-routed request blocks
+  // a server thread pool thread for up to 16s waiting on the target machine's websocket
+  // response, so firing 15+ at once exhausts the thread pool and the HTTP server stops
+  // responding entirely (page appears dead). Sequential sends keep only one thread blocked
+  // at a time.
+  function runBulkAutoRejoin(enabled, requireJobId) {
+    var jobId = document.getElementById('bulkJobId').value.trim();
+    var msg = document.getElementById('bulkMsg');
+    var targets = selectedAccounts();
+
+    if (requireJobId && !jobId) {
+      msg.textContent = 'Enter a Job ID first';
+      msg.className = 'msg err';
+      return;
+    }
+
+    if (targets.length === 0) {
+      msg.textContent = 'No accounts selected';
+      msg.className = 'msg err';
+      return;
+    }
+
+    bulkButtonIds.forEach(function (id) { document.getElementById(id).disabled = true; });
+    msg.textContent = 'Queueing ' + targets.length + ' account(s)...';
+    msg.className = 'msg';
+
+    var progress = document.getElementById('queueProgress');
+    var progressFill = document.getElementById('queueProgressFill');
+    var startedAt = Date.now();
+    progress.classList.remove('hidden');
+    progressFill.style.width = '0%';
+
+    // This measures submission to the server, not remote completion. Relay commands are
+    // asynchronous after the server accepts the batch, so claiming a remote ETA here would
+    // be misleading. The bar reaches 90% over two seconds and completes on the response.
+    var progressTimer = setInterval(function () {
+      var percent = Math.min(90, ((Date.now() - startedAt) / 2000) * 90);
+      progressFill.style.width = percent + '%';
+    }, 100);
+
+    var payload = {
+      jobId: jobId,
+      enabled: enabled,
+      accounts: targets.map(function (a) {
+        return { username: a.username, machine: a.machine };
+      })
+    };
+
+    fetch('/control/api/autorejoinbatch', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json(); }).then(function (result) {
+      clearInterval(progressTimer);
+      progressFill.style.width = '100%';
+      msg.textContent = result.message || 'Bulk Auto Re-join queued';
+      msg.className = 'msg ' + (result.success ? 'ok' : 'err');
+    }).catch(function (e) {
+      clearInterval(progressTimer);
+      progressFill.style.width = '0%';
+      msg.textContent = 'Request failed: ' + e.message;
+      msg.className = 'msg err';
+    }).finally(function () {
+      bulkButtonIds.forEach(function (id) { document.getElementById(id).disabled = false; });
+    });
+  }
+
   function runBulk(path, buildBody, requireJobId) {
     var jobId = document.getElementById('bulkJobId').value.trim();
     var msg = document.getElementById('bulkMsg');
@@ -623,24 +703,35 @@ namespace RBX_Alt_Manager.Nexus
     msg.textContent = 'Sending to ' + targets.length + ' account(s)...';
     msg.className = 'msg';
 
-    Promise.all(targets.map(function (a) {
-      return fetch(path, {
+    var okCount = 0;
+    var index = 0;
+
+    function sendNext() {
+      if (index >= targets.length) {
+        msg.textContent = okCount + '/' + targets.length + ' succeeded';
+        msg.className = 'msg ' + (okCount === targets.length ? 'ok' : 'err');
+        bulkButtonIds.forEach(function (id) { document.getElementById(id).disabled = false; });
+        return;
+      }
+
+      var a = targets[index];
+      msg.textContent = 'Sending ' + (index + 1) + '/' + targets.length + ' (' + a.username + ')...';
+
+      fetch(path, {
         method: 'POST',
         headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
         body: JSON.stringify(buildBody(a, jobId))
       }).then(function (r) { return r.json(); }).then(function (result) {
-        return !!result.success;
+        if (result.success) okCount++;
       }).catch(function () {
-        return false;
+        /* count as failure */
+      }).finally(function () {
+        index++;
+        setTimeout(sendNext, 300);
       });
-    })).then(function (results) {
-      var okCount = results.filter(Boolean).length;
+    }
 
-      msg.textContent = okCount + '/' + targets.length + ' succeeded';
-      msg.className = 'msg ' + (okCount === targets.length ? 'ok' : 'err');
-    }).finally(function () {
-      bulkButtonIds.forEach(function (id) { document.getElementById(id).disabled = false; });
-    });
+    sendNext();
   }
 
   document.getElementById('bulkTeleport').addEventListener('click', function () {
@@ -650,15 +741,11 @@ namespace RBX_Alt_Manager.Nexus
   });
 
   document.getElementById('bulkAutoRejoin').addEventListener('click', function () {
-    runBulk('/control/api/autorejoin', function (a, jobId) {
-      return { username: a.username, machine: a.machine, enabled: true, jobId: jobId };
-    }, true);
+    runBulkAutoRejoin(true, true);
   });
 
   document.getElementById('bulkAutoRejoinOff').addEventListener('click', function () {
-    runBulk('/control/api/autorejoin', function (a) {
-      return { username: a.username, machine: a.machine, enabled: false, jobId: '' };
-    }, false);
+    runBulkAutoRejoin(false, false);
   });
 
   function poll() {

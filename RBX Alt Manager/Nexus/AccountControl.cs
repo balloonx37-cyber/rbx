@@ -307,6 +307,12 @@ namespace RBX_Alt_Manager.Forms
                     return;
                 }
 
+                if (e.Request.Url.AbsolutePath == "/control/api/autorejoinbatch")
+                {
+                    HandleWebControlAutoRejoinBatch(e);
+                    return;
+                }
+
                 e.Response.StatusCode = 404;
             };
 
@@ -509,7 +515,7 @@ namespace RBX_Alt_Manager.Forms
                     return;
                 }
 
-                ResultReady.Wait(TimeSpan.FromSeconds(16));
+                ResultReady.Wait(TimeSpan.FromSeconds(5));
 
                 string FinalResult = RelayResult ?? "ERROR: Timed out waiting for the target machine to respond";
 
@@ -573,6 +579,13 @@ namespace RBX_Alt_Manager.Forms
             public bool Enabled;
         }
 
+        private class AutoRejoinBatchRequest
+        {
+            public List<AutoRejoinRequest> Accounts;
+            public string JobId;
+            public bool Enabled;
+        }
+
         private void HandleWebControlAutoRejoin(HttpRequestEventArgs e)
         {
             if (!IsWebControlAuthorized(e))
@@ -620,15 +633,23 @@ namespace RBX_Alt_Manager.Forms
 
             // Same routing split as HandleWebControlTeleport - a relay-connected account could
             // belong to a different machine than the one actually serving this HTTP request.
-            if (RelayManager.IsEnabled && !string.IsNullOrEmpty(Machine))
-            {
-                var ResultReady = new System.Threading.ManualResetEventSlim(false);
-                string RelayResult = null;
+            // However, accounts that live on THIS machine should be handled directly (no relay
+            // round-trip) - the relay websocket is shared with health/money polling from every
+            // connected account, so routing a local account through it adds a 16s blocking wait
+            // behind all that traffic and can starve the HTTP thread pool.
+            bool IsLocalAccount = false;
 
-                bool Routed = RelayHub.TrySetAutoRejoin(Machine, Username, Enabled, JobId, Result =>
+            lock (AccountsLock)
+                IsLocalAccount = Accounts.Any(a => a.Username == Username);
+
+            if (RelayManager.IsEnabled && !string.IsNullOrEmpty(Machine) && !IsLocalAccount)
+            {
+                bool Routed = RelayHub.TrySetAutoRejoin(Machine, Username, Enabled, JobId, RelayResult =>
                 {
-                    RelayResult = Result;
-                    ResultReady.Set();
+                    // The HTTP request is intentionally completed immediately after the command
+                    // is queued. Waiting here would hold an HTTP worker while the remote machine
+                    // processes the command and can make bulk operations starve the web server.
+                    LogAutoRejoin($"[Web Control] Setting Auto Re-join for {Username} on {Machine} to {Enabled}: {RelayResult}");
                 });
 
                 if (!Routed)
@@ -637,12 +658,7 @@ namespace RBX_Alt_Manager.Forms
                     return;
                 }
 
-                ResultReady.Wait(TimeSpan.FromSeconds(16));
-
-                string FinalResult = RelayResult ?? "ERROR: Timed out waiting for the target machine to respond";
-
-                LogAutoRejoin($"[Web Control] Setting Auto Re-join for {Username} on {Machine} to {Enabled}: {FinalResult}");
-                WriteJson(e, new { success = FinalResult.Contains("Success"), message = FinalResult });
+                WriteJson(e, new { success = true, message = $"Queued Auto Re-join for {Username} on {Machine}" });
                 return;
             }
 
@@ -650,6 +666,86 @@ namespace RBX_Alt_Manager.Forms
 
             LogAutoRejoin($"[Web Control] Setting Auto Re-join for {Username} to {Enabled}: {LocalResult}");
             WriteJson(e, new { success = LocalResult.Contains("Success"), message = LocalResult });
+        }
+
+        private void HandleWebControlAutoRejoinBatch(HttpRequestEventArgs e)
+        {
+            if (!IsWebControlAuthorized(e))
+            {
+                e.Response.StatusCode = 401;
+                return;
+            }
+
+            string Body;
+            AutoRejoinBatchRequest Payload;
+
+            using (var Reader = new StreamReader(e.Request.InputStream, System.Text.Encoding.UTF8))
+                Body = Reader.ReadToEnd();
+
+            try
+            {
+                Payload = JsonConvert.DeserializeObject<AutoRejoinBatchRequest>(Body);
+            }
+            catch (Exception ex)
+            {
+                WriteJson(e, new { success = false, message = $"Invalid request body: {ex.Message}" });
+                return;
+            }
+
+            if (Payload?.Accounts == null || Payload.Accounts.Count == 0)
+            {
+                WriteJson(e, new { success = false, message = "No accounts provided" });
+                return;
+            }
+
+            if (Payload.Enabled && string.IsNullOrEmpty(Payload.JobId))
+            {
+                WriteJson(e, new { success = false, message = "jobId is required to enable Auto Re-join" });
+                return;
+            }
+
+            int Requested = Payload.Accounts.Count;
+            Task.Run(() =>
+            {
+                foreach (var AccountInfo in Payload.Accounts)
+                {
+                    string Username = AccountInfo?.Username;
+                    string Machine = AccountInfo?.Machine;
+
+                    if (string.IsNullOrEmpty(Username))
+                        continue;
+
+                    bool IsLocalAccount;
+                    lock (AccountsLock)
+                        IsLocalAccount = Accounts.Any(a => a.Username == Username);
+
+                    if (RelayManager.IsEnabled && !string.IsNullOrEmpty(Machine) && !IsLocalAccount)
+                    {
+                        bool Routed = RelayHub.TrySetAutoRejoin(Machine, Username, Payload.Enabled, Payload.JobId, RelayResult =>
+                        {
+                            LogAutoRejoin($"[Web Control] Bulk Auto Re-join for {Username} on {Machine}: {RelayResult}");
+                        });
+
+                        if (!Routed)
+                            LogAutoRejoin($"[Web Control] Bulk Auto Re-join for {Username}: machine \"{Machine}\" is not connected");
+                    }
+                    else
+                    {
+                        string LocalResult = SetAutoRejoin(Username, Payload.Enabled, Payload.JobId);
+                        LogAutoRejoin($"[Web Control] Bulk Auto Re-join for {Username}: {LocalResult}");
+                    }
+                }
+            });
+
+            // Never hold the HTTP request open while dispatching the individual commands.
+            // Remote relay commands and local persistence are performed in the background.
+            WriteJson(e, new
+            {
+                success = true,
+                queued = Requested,
+                failed = 0,
+                message = $"Auto Re-join queued for {Requested} account(s)"
+            });
         }
 
         public void EmitMessage(string Message, bool ToAll = false)

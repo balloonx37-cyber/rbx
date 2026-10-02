@@ -460,20 +460,33 @@ namespace RBX_Alt_Manager.Nexus
                 bool Enabled = Convert.ToBoolean(Msg["enabled"]);
                 string JobId = Msg["jobId"]?.ToString();
 
-                string Result;
-
-                try { Result = AccountControl.Instance.SetAutoRejoin(Username, Enabled, JobId); }
-                catch (Exception ex) { Result = $"ERROR: {ex.Message}"; }
-
-                if (IsConnected)
+                // Do not block the relay WebSocket receive callback on account persistence.
+                // A bulk action delivers many commands over this same socket; processing the
+                // first SaveAccounts() synchronously here delays every later command/result.
+                Task.Run(() =>
                 {
-                    Socket.Send(JsonConvert.SerializeObject(new
+                    string Result;
+
+                    try { Result = AccountControl.Instance.SetAutoRejoin(Username, Enabled, JobId); }
+                    catch (Exception ex) { Result = $"ERROR: {ex.Message}"; }
+
+                    if (IsConnected)
                     {
-                        type = "setAutoRejoinResult",
-                        requestId = RequestId,
-                        result = Result
-                    }));
-                }
+                        try
+                        {
+                            Socket.Send(JsonConvert.SerializeObject(new
+                            {
+                                type = "setAutoRejoinResult",
+                                requestId = RequestId,
+                                result = Result
+                            }));
+                        }
+                        catch (Exception ex)
+                        {
+                            Program.Logger.Warn($"[Relay] Failed to send Auto Re-join result: {ex.Message}");
+                        }
+                    }
+                });
             }
         }
     }
