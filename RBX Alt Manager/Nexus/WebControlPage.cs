@@ -237,6 +237,9 @@ namespace RBX_Alt_Manager.Nexus
         <th>Game</th>
         <th>Job ID</th>
         <th>Players</th>
+        <th>Alive</th>
+        <th>Money</th>
+        <th>Bank</th>
         <th>Teleport to Job ID</th>
         <th>Auto Re-join</th>
       </tr>
@@ -447,6 +450,9 @@ namespace RBX_Alt_Manager.Nexus
         (a.jobId ? '<button class=""copy-btn"" id=""copy-' + i + '"" data-jobid=""' + escapeHtml(a.jobId) + '"">Copy</button>' : '') +
         '</td>' +
         '<td>' + escapeHtml(players) + '</td>' +
+        '<td>' + (a.health >= 0 ? (a.isAlive ? '✅ ' + a.health : '💀') : '') + '</td>' +
+        '<td>' + (a.money >= 0 ? '$' + a.money.toLocaleString() : '') + '</td>' +
+        '<td>' + (a.bankMoney >= 0 ? '$' + a.bankMoney.toLocaleString() : '') + '</td>' +
         '<td>' +
         '<div class=""row-controls"">' +
         '<input class=""row-input"" id=""jobinput-' + i + '"" placeholder=""target job id"" value=""' + escapeHtml(draftJobId) + '"" />' +
@@ -682,7 +688,7 @@ namespace RBX_Alt_Manager.Nexus
 
   setInterval(function () {
     if (token) poll();
-  }, 5000);
+  }, 3000);
 })();
 </script>
 </body>

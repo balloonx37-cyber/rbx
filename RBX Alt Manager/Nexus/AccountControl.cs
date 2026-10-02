@@ -420,6 +420,10 @@ namespace RBX_Alt_Manager.Forms
                     jobId = a.JobId,
                     players = a.Players,
                     maxPlayers = a.MaxPlayers,
+                    health = a.Health,
+                    isAlive = a.IsAlive,
+                    money = a.Money,
+                    bankMoney = a.BankMoney,
                     autoRejoin = a.AutoRejoin,
                     autoRejoinJobId = a.AutoRejoinJobId
                 }).ToList<object>()
@@ -433,6 +437,10 @@ namespace RBX_Alt_Manager.Forms
                     jobId = a.InGameJobId,
                     players = a.PlayerCount,
                     maxPlayers = a.MaxPlayers,
+                    health = a.Health,
+                    isAlive = a.IsAlive,
+                    money = a.Money,
+                    bankMoney = a.BankMoney,
                     autoRejoin = a.AutoRejoin,
                     autoRejoinJobId = a.AutoRejoinJobId
                 }).ToList<object>();

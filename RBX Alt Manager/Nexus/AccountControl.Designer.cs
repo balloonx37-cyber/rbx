@@ -62,6 +62,9 @@ namespace RBX_Alt_Manager.Forms
             this.cJobId = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.cPlaceId = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.cPlaceName = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.cAlive = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.cMoney = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
+            this.cBank = ((BrightIdeasSoftware.OLVColumn)(new BrightIdeasSoftware.OLVColumn()));
             this.ACStrip = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.copyJobIdToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.closeRobloxToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -381,6 +384,9 @@ namespace RBX_Alt_Manager.Forms
             this.AccountsView.AllColumns.Add(this.cPlaceId);
             this.AccountsView.AllColumns.Add(this.cPlaceName);
             this.AccountsView.AllColumns.Add(this.cPlayers);
+            this.AccountsView.AllColumns.Add(this.cAlive);
+            this.AccountsView.AllColumns.Add(this.cMoney);
+            this.AccountsView.AllColumns.Add(this.cBank);
             this.AccountsView.AllowColumnReorder = true;
             this.AccountsView.AllowDrop = true;
             this.AccountsView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
@@ -401,7 +407,10 @@ namespace RBX_Alt_Manager.Forms
             this.cJobId,
             this.cPlaceId,
             this.cPlaceName,
-            this.cPlayers});
+            this.cPlayers,
+            this.cAlive,
+            this.cMoney,
+            this.cBank});
             this.AccountsView.ContextMenuStrip = this.ACStrip;
             this.AccountsView.Cursor = System.Windows.Forms.Cursors.Default;
             this.AccountsView.FullRowSelect = true;
@@ -470,6 +479,27 @@ namespace RBX_Alt_Manager.Forms
             this.cPlayers.Text = "Players";
             this.cPlayers.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
             this.cPlayers.Width = 70;
+            //
+            // cAlive
+            //
+            this.cAlive.AspectName = "AliveDisplay";
+            this.cAlive.Text = "Alive";
+            this.cAlive.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+            this.cAlive.Width = 50;
+            //
+            // cMoney
+            //
+            this.cMoney.AspectName = "MoneyDisplay";
+            this.cMoney.Text = "Money";
+            this.cMoney.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+            this.cMoney.Width = 70;
+            //
+            // cBank
+            //
+            this.cBank.AspectName = "BankDisplay";
+            this.cBank.Text = "Bank";
+            this.cBank.TextAlign = System.Windows.Forms.HorizontalAlignment.Center;
+            this.cBank.Width = 70;
             //
             // ACStrip
             // 
@@ -1258,6 +1288,9 @@ namespace RBX_Alt_Manager.Forms
         private BrightIdeasSoftware.OLVColumn cPlaceId;
         private BrightIdeasSoftware.OLVColumn cPlaceName;
         private BrightIdeasSoftware.OLVColumn cPlayers;
+        private BrightIdeasSoftware.OLVColumn cAlive;
+        private BrightIdeasSoftware.OLVColumn cMoney;
+        private BrightIdeasSoftware.OLVColumn cBank;
         private BrightIdeasSoftware.MultiImageRenderer StatusRenderer;
         private BrightIdeasSoftware.OLVColumn cCheckBoxes;
         private System.Windows.Forms.CheckBox AutoRejoinCheckbox;

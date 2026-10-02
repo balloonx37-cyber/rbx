@@ -39,6 +39,13 @@ namespace RBX_Alt_Manager.Nexus
         [JsonIgnore] public int PlayerCount = -1;
         [JsonIgnore] public int MaxPlayers = -1;
         [JsonIgnore] public string ServerPlayers => PlayerCount >= 0 && MaxPlayers >= 0 ? $"{PlayerCount}/{MaxPlayers}" : "";
+        [JsonIgnore] public int Health = -1;
+        [JsonIgnore] public bool IsAlive = false;
+        [JsonIgnore] public string AliveDisplay => Health >= 0 ? (IsAlive ? $"✅ {Health}" : "💀") : "";
+        [JsonIgnore] public int Money = -1;
+        [JsonIgnore] public int BankMoney = -1;
+        [JsonIgnore] public string MoneyDisplay => Money >= 0 ? $"${Money:N0}" : "";
+        [JsonIgnore] public string BankDisplay => BankMoney >= 0 ? $"${BankMoney:N0}" : "";
         public double RelaunchDelay = 30;
 
         public bool AutoRejoin;
@@ -222,6 +229,10 @@ namespace RBX_Alt_Manager.Nexus
             ClientCanReceive = false;
             PlayerCount = -1;
             MaxPlayers = -1;
+            Health = -1;
+            IsAlive = false;
+            Money = -1;
+            BankMoney = -1;
 
             // Invalidate any pending poll loop from PollServerInfoLoop so it stops rescheduling
             // itself for a server this account isn't even connected to anymore.
@@ -270,6 +281,21 @@ namespace RBX_Alt_Manager.Nexus
                     // InGameJobId otherwise only gets set once, at initial websocket connect.
                     JobId = command.Payload["Content"];
                     InGameJobId = command.Payload["Content"];
+                }
+                else if (command.Name == "SetHealth" && int.TryParse(command.Payload["Content"], out int hp))
+                {
+                    Health = hp;
+                    IsAlive = command.Payload.TryGetValue("Alive", out string aliveStr) && aliveStr == "true";
+
+                    AccountControl.Instance.BeginInvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
+                }
+                else if (command.Name == "SetMoney" && int.TryParse(command.Payload["Content"], out int money))
+                {
+                    Money = money;
+                    if (command.Payload.TryGetValue("Bank", out string bankStr))
+                        int.TryParse(bankStr, out BankMoney);
+
+                    AccountControl.Instance.BeginInvokeIfRequired(() => AccountControl.Instance.AccountsView.RefreshObject(this));
                 }
                 else if (command.Name == "Echo" && !string.IsNullOrEmpty(command.Payload["Content"]))
                     AccountControl.Instance.EmitMessage(command.Payload["Content"], true);

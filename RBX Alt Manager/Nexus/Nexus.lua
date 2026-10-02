@@ -428,6 +428,115 @@ do -- Default Commands
     end)
 end
 
+do -- Health Monitor
+    -- Lightweight real-time health tracking: polls every HealthPollInterval seconds
+    -- and sends a single SetHealth message with HP + alive status. The ping loop
+    -- already sends 1 msg/sec so this adds negligible overhead.
+    local Workspace = game:GetService'Workspace'
+
+    Nexus.HealthPollInterval = 3
+
+    local function FindCharacter()
+        local Char = LocalPlayer.Character
+        if Char and Char:FindFirstChildOfClass'Humanoid' then return Char end
+
+        -- Some games use custom character systems that never set Player.Character;
+        -- the character model lives directly in Workspace under the player's name.
+        return Workspace:FindFirstChild(LocalPlayer.Name)
+    end
+
+    local function SendHealth()
+        if not Nexus.IsConnected then return end
+
+        local Char = FindCharacter()
+        local Hum = Char and Char:FindFirstChildOfClass'Humanoid'
+
+        if Hum then
+            Nexus:Send('SetHealth', {
+                Content = tostring(math.floor(Hum.Health)),
+                Alive = Hum.Health > 0 and 'true' or 'false'
+            })
+        else
+            Nexus:Send('SetHealth', { Content = '-1', Alive = 'false' })
+        end
+    end
+
+    task.spawn(function()
+        while true do
+            if Nexus.IsConnected then
+                SendHealth()
+            end
+
+            task.wait(Nexus.HealthPollInterval)
+        end
+    end)
+
+    -- On-demand query: send "health" from the control panel to get an immediate update
+    Nexus:AddCommand('health', SendHealth)
+end
+
+do -- Money Monitor
+    -- Reads "Hand Balance" and "Bank Balance" from GUI TextLabels (used by games
+    -- like BlockSpin that store money in custom UI rather than leaderstats).
+    -- Polls every MoneyPollInterval seconds; negligible overhead.
+    Nexus.MoneyPollInterval = 3
+
+    local function FindMoneyLabels()
+        local Hand, Bank = nil, nil
+
+        local function Search(Obj, Depth)
+            if Depth > 8 then return end
+            for _, Child in ipairs(Obj:GetChildren()) do
+                if Child:IsA'TextLabel' or Child:IsA'TextButton' then
+                    local T = Child.Text or ''
+                    if T:find'Hand Balance' then Hand = Child end
+                    if T:find'Bank Balance' then Bank = Child end
+                end
+                Search(Child, Depth + 1)
+            end
+        end
+
+        local PG = LocalPlayer:FindFirstChild'PlayerGui'
+        if PG then Search(PG, 0) end
+
+        return Hand, Bank
+    end
+
+    local function ParseMoney(Text)
+        if not Text then return -1 end
+        local Num = Text:match('%$?([%d,]+)')
+        if not Num then return -1 end
+        local Clean = Num:gsub(',', '')
+        return tonumber(Clean) or -1
+    end
+
+    local function SendMoney()
+        if not Nexus.IsConnected then return end
+
+        local Hand, Bank = FindMoneyLabels()
+        local HandVal = ParseMoney(Hand and Hand.Text)
+        local BankVal = ParseMoney(Bank and Bank.Text)
+
+        Nexus:Send('SetMoney', {
+            Content = tostring(HandVal),
+            Bank = tostring(BankVal)
+        })
+    end
+
+    task.spawn(function()
+        while true do
+            if Nexus.IsConnected then
+                SendMoney()
+            end
+
+            task.wait(Nexus.MoneyPollInterval)
+        end
+    end)
+
+    -- On-demand query: send "money" from the control panel to get an immediate update
+    Nexus:AddCommand('money', SendMoney)
+end
+
 do -- Connections
     GuiService.ErrorMessageChanged:Connect(function()
         if NoShutdown then return end

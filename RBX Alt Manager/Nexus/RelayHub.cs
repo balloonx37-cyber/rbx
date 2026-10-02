@@ -32,6 +32,10 @@ namespace RBX_Alt_Manager.Nexus
             public string JobId;
             public int Players;
             public int MaxPlayers;
+            public int Health = -1;
+            public bool IsAlive;
+            public int Money = -1;
+            public int BankMoney = -1;
             public bool AutoRejoin;
             public string AutoRejoinJobId;
         }
@@ -371,6 +375,10 @@ namespace RBX_Alt_Manager.Nexus
                 jobId = a.InGameJobId,
                 players = a.PlayerCount,
                 maxPlayers = a.MaxPlayers,
+                health = a.Health,
+                isAlive = a.IsAlive,
+                money = a.Money,
+                bankMoney = a.BankMoney,
                 autoRejoin = a.AutoRejoin,
                 autoRejoinJobId = a.AutoRejoinJobId
             }).ToList();
